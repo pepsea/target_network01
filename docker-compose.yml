@@ -1,0 +1,24 @@
+# docker compose run --rm cli upstream --gene AKT1          # CLI
+# docker compose up -d jupyter                              # JupyterLab on :8888
+services:
+  cli:
+    build: .
+    image: target_net:latest
+    volumes:
+      - /data/database:/data/database:ro        # databases (edit host path)
+      - ./target_net.yaml:/config/target_net.yaml:ro
+      - ./runs:/app/runs                         # outputs
+    environment:
+      - TARGETNET_CONFIG=/config/target_net.yaml
+  jupyter:
+    image: target_net:latest
+    entrypoint: ["jupyter", "lab", "--no-browser", "--ip", "0.0.0.0", "--port", "8888", "--allow-root", "--notebook-dir", "/app"]
+    ports:
+      - "127.0.0.1:8888:8888"                    # localhost only; reach it through an ssh tunnel
+    volumes:
+      - /data/database:/data/database:ro
+      - ./target_net.yaml:/config/target_net.yaml:ro
+      - ./runs:/app/runs
+      - ./notebooks:/app/notebooks               # keep edited notebooks on the host
+    environment:
+      - TARGETNET_CONFIG=/config/target_net.yaml

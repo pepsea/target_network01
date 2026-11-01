@@ -12,6 +12,9 @@ python target_net.py crosstalk  --causal AKT1 --goi MAPK1 # 2    does gene X inf
 Add `--demo` to any command for an offline smoke test on a curated AKT1 / MAPK1 axis (no internet needed;
 the DepMap part of the demo is **simulated** and labelled as such).
 
+## Install on a Linux server
+`docs/INSTALL_LINUX.md` — venv or Docker (`Dockerfile`, `docker-compose.yml`), data folder, config, JupyterLab, systemd, troubleshooting.
+
 ## Data files
 `docs/DATA_SETUP.md` lists every database (source page, command, expected file, licence, update cadence);
 `bash scripts/setup_data.sh ~/Documents/database` downloads everything that can be fetched automatically.
