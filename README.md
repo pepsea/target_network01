@@ -29,6 +29,7 @@ Which file each mode needs (`python target_net.py check-config` shows what is pr
 | `tf_list` | `tf/DatabaseExtract_v_1.01.csv` | **downstream, crosstalk** (walk endpoints) | `curl -o ~/Documents/database/tf/DatabaseExtract_v_1.01.csv http://humantfs.ccbr.utoronto.ca/download/v_1.01/DatabaseExtract_v_1.01.csv` — or open http://humantfs.ccbr.utoronto.ca/download.php → "Human TFs – Database Extract (v1.01)". Static 2018 list, CC-BY; rows `Is TF? == Yes` (1,639) are used |
 | `regulon` | `dorothea/dorothea_ABC_commercial.tsv` | downstream (TF → genes) | `python target_net.py regulon-url --save <path>` (OmniPath, commercial-licensed records) |
 | `depmap` | `depmap/CRISPRGeneEffect.csv` (+ mutations, expression) | sl, co-essentiality | `python fetch_depmap.py --out ~/Documents/database/depmap` |
+| `omnipath` | `omnipath/omnipath_signed.tsv` (or auto-cache) | gap filler where SIGNOR has no edge (mode `gaps`) | `python target_net.py omnipath-url --save <path>`; licence-filtered to commercial-purpose resources |
 | `hpa_tissue` | `hpa/rna_tissue_consensus_tissues.tsv` | `--tissue` filter only | HPA download (CC BY-SA) |
 
 With `allow_download: true` a missing `tf_list`, `regulon`, `reactome_fi` or `hpa_tissue` is fetched into `cache_dir` on first use;

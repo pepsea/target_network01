@@ -68,14 +68,26 @@ python fetch_depmap.py --out ~/Documents/database/depmap          # downloads th
 - Columns used: `Gene name`, `Tissue`, `nTPM` (genes with nTPM ≥ 1 in the chosen tissue are kept). Both `.tsv` and `.zip` accepted.
 - Licence is CC BY-SA: used only as a filter, never redistributed in outputs. Updated: yearly.
 
-## 8. Custom edges (optional, your own curation or in-house data)
+## 8. OmniPath signed interactions — automatic gap filler for SIGNOR (optional, on by default)
+```bash
+python target_net.py omnipath-url --save ~/Documents/database/omnipath/omnipath_signed.tsv   # or leave path null: downloaded into cache_dir on first use
+```
+- What: directed, signed protein interactions pooled by OmniPath (omnipathdb.org) from many curated resources (SignaLink3, SIGNOR, …).
+- Why: SIGNOR has curation holes (e.g. no output for ACVRL1 although ALK1 → SMAD1/5 is textbook). With `omnipath.mode: gaps`
+  (default) an OmniPath edge is used **only** where SIGNOR has no output from the source protein or no input to the target
+  protein, so holes are closed without re-flooding hubs. `mode: full` uses all (expect many more nodes; recalibrate min_score). `off` disables.
+- Licence: filtered locally against OmniPath's resource list — a record is kept only if a contributing resource is marked
+  `purpose: commercial` (SIGNOR CC BY 4.0, SignaLink3 CC BY-SA 3.0, …); non-commercial resources (Wang, Cellinker, PhosphoSite,
+  HINT …) are removed. Share-alike (SA) terms apply if you redistribute a derived database. Edge hover shows the retained resources.
+
+## 9. Custom edges (optional, your own curation or in-house data)
 A tsv/csv at `databases.custom_edges.path` with columns `src, dst, effect` (+1 / −1 / 0, or activate / inhibit) and optional
 `mechanism, residue, score (0–1), source`. Lines starting with `#` are ignored. Edges are merged into the walk graph as source
 `custom` (weight 0.8 × score; a pair also in SIGNOR becomes `SIGNOR+custom`, 0.95). Use it for relations SIGNOR lacks
 (e.g. `ACVRL1 SMAD1 activate phosphorylation`) or for AirID / phosphoproteomics results you want the walk to see. Every edge you add is
 your assertion — keep the file under version control next to the project.
 
-## 9. STRING (physical contact with the seed)
+## 10. STRING (physical contact with the seed)
 - API only (`https://string-db.org/api/...`, experimental + database channels, score ≥ 700). Needs internet; with `allow_download: false` this layer is skipped.
 - A local STRING file is not supported yet (the full `protein.physical.links.detailed.v12.0.txt.gz` is 1.5 GB; open item if offline use matters).
 

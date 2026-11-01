@@ -54,6 +54,12 @@ databases:
     conf: ABC                   # DoRothEA confidence levels kept
     license: commercial         # OmniPath per-record licence filter: commercial | academic | ignore
     path: ~/Documents/database/dorothea/dorothea_ABC_commercial.tsv  # OmniPath export, or tf,target,mor,confidence; null = download
+  omnipath:
+    mode: gaps                  # gaps (default): OmniPath signed edges only where SIGNOR has no output from the source / no input to the target
+                                # (closes curation holes such as ACVRL1 -> SMAD1/5 without flooding hubs) | full | off
+    datasets: omnipath,pathwayextra,kinaseextra,ligrecextra
+    license: commercial         # keep a record only if a contributing resource is marked purpose=commercial by OmniPath (local filter)
+    path: null                  # null = download once into cache_dir; or a saved OmniPath interactions tsv (genesymbols=1, fields=sources,references,...)
   custom_edges:
     path: null                  # optional tsv: src, dst, effect(+1/-1/0 or activate/inhibit) [, mechanism, residue, score, source]
                                 # relations missing from SIGNOR (e.g. ACVRL1 -> SMAD1) or in-house data (AirID, phospho); merged as source 'custom', weight 0.8

@@ -18,6 +18,7 @@ get "$ROOT/uniprot/uniprot_human_reviewed.tsv" \
   "https://rest.uniprot.org/uniprotkb/stream?query=organism_id:9606+AND+reviewed:true&fields=accession,gene_primary,keyword,cc_subcellular_location&format=tsv"
 
 echo "[4] Lambert 2018 TF list"
+mkdir -p "$ROOT/omnipath"; python3 "$(dirname "$0")/../target_net.py" omnipath-url --save "$ROOT/omnipath/omnipath_signed.tsv" || echo "OmniPath signed layer: download later with: python target_net.py omnipath-url --save $ROOT/omnipath/omnipath_signed.tsv"
 get "$ROOT/tf/DatabaseExtract_v_1.01.csv" "http://humantfs.ccbr.utoronto.ca/download/v_1.01/DatabaseExtract_v_1.01.csv"
 
 echo "[5] DoRothEA regulons via OmniPath (licence filter from target_net.yaml / default commercial)"

@@ -43,6 +43,8 @@ def build_signaling(args):
     parts = [sig]; und = pd.DataFrame(columns=["a", "b", "source"])
     if not args.no_reactome:
         rd, und = D.load_reactome_fi(args.reactome_fi, args.demo); parts.append(rd)
+    omni = D.load_omnipath_signed(args.demo, signor_df=sig)
+    if len(omni): parts.append(omni)
     cust = D.load_custom_edges(args.demo)
     if len(cust): parts.append(cust)
     directed = D.merge_directed(*parts)
@@ -344,6 +346,7 @@ def check_config(cfg):
       ("compartments", "optional override of compartments", Cf.db(cfg, "compartments"), "", "derived from uniprot"),
       ("tf_list", "downstream endpoints (required for downstream/crosstalk)", Cf.db(cfg, "tf_list"), "", "download Lambert 2018"),
       ("regulon", "TF -> target genes", Cf.db(cfg, "regulon"), f"source={Cf.db(cfg,'regulon','source')}, conf={Cf.db(cfg,'regulon','conf')}, license={Cf.db(cfg,'regulon','license')}", "download via OmniPath"),
+      ("omnipath", f"gap filler for SIGNOR (mode={Cf.db(cfg,'omnipath','mode') or 'gaps'}, licence-filtered OmniPath)", Cf.db(cfg, "omnipath"), f"datasets={Cf.db(cfg,'omnipath','datasets')}", "download via OmniPath API"),
       ("custom_edges", "optional user-curated edges merged into the walk graph", Cf.db(cfg, "custom_edges"), "", "none (optional)"),
       ("hpa_tissue", "expression filter (--tissue only)", Cf.db(cfg, "hpa_tissue"), "", "download HPA consensus"),
     ]
@@ -419,6 +422,8 @@ def main():
     p.add_argument("--config", default=None)
     p = sub.add_parser("signor-lookup", help="show every SIGNOR row mentioning a gene (why does the seed have / lack edges?)")
     p.add_argument("--gene", required=True); p.add_argument("--config", default=None)
+    p = sub.add_parser("omnipath-url", help="print (or --save FILE) the OmniPath URL for the signed-interaction gap-filler layer")
+    p.add_argument("--save", default=None); p.add_argument("--config", default=None)
     p = sub.add_parser("regulon-url", help="print (or --save FILE) the OmniPath URL for the configured regulon")
     p.add_argument("--save", default=None); p.add_argument("--config", default=None)
     p.add_argument("--source", default=None); p.add_argument("--conf", default=None); p.add_argument("--license", default=None)
@@ -430,6 +435,18 @@ def main():
         cfg = Cf.load_config(args.config); D.set_config(cfg); check_config(cfg); return
     if args.mode == "signor-lookup":
         cfg = Cf.load_config(args.config); D.set_config(cfg); signor_lookup(args.gene, cfg); return
+    if args.mode == "omnipath-url":
+        cfg = Cf.load_config(args.config); D.set_config(cfg)
+        datasets = Cf.db(cfg, "omnipath", "datasets") or "omnipath,pathwayextra,kinaseextra,ligrecextra"
+        url = (D.OMNIPATH_URL + f"?datasets={datasets}&organisms=9606&genesymbols=1&directed=1&types=post_translational"
+               "&fields=sources,references,type,is_directed,is_stimulation,is_inhibition")
+        print(url)
+        if args.save:
+            import requests; os.makedirs(os.path.dirname(os.path.expanduser(args.save)) or ".", exist_ok=True)
+            r = requests.get(url, timeout=900); r.raise_for_status(); open(os.path.expanduser(args.save), "w").write(r.text)
+            D.cached_text("omnipath_resources", "https://omnipathdb.org/resources?format=json")   # licence list, cached next to it
+            print(f"saved {args.save}: {len(r.text.splitlines()) - 1} rows (set databases.omnipath.path to this file)")
+        return
     if args.mode == "regulon-url":
         cfg = Cf.load_config(args.config)
         url = D.omnipath_regulon_url(args.source or Cf.db(cfg, "regulon", "source") or "dorothea", args.conf or Cf.db(cfg, "regulon", "conf") or "ABC",

@@ -40,7 +40,7 @@ LAMBERT_URL = "http://humantfs.ccbr.utoronto.ca/download/v_1.01/DatabaseExtract_
 OMNIPATH_URL = "https://omnipathdb.org/interactions"
 HPA_URL = "https://www.proteinatlas.org/download/rna_tissue_consensus.tsv.zip"
 
-EDGE_WEIGHT = {"SIGNOR": 0.9, "Reactome": 0.7, "SIGNOR+Reactome": 0.95, "custom": 0.8, "SIGNOR+custom": 0.95, "Reactome+custom": 0.9, "Reactome+SIGNOR+custom": 0.95}
+EDGE_WEIGHT = {"SIGNOR": 0.9, "OmniPath": 0.7, "OmniPath+SIGNOR": 0.95, "OmniPath+Reactome": 0.8, "OmniPath+custom": 0.9, "Reactome": 0.7, "SIGNOR+Reactome": 0.95, "custom": 0.8, "SIGNOR+custom": 0.95, "Reactome+custom": 0.9, "Reactome+SIGNOR+custom": 0.95}
 
 
 class DownloadError(RuntimeError):
@@ -221,6 +221,71 @@ def load_reactome_fi(path=None, demo=False):
     unddf = pd.DataFrame(und, columns=["a", "b"]).assign(source="Reactome")
     print(f"[Reactome] FI rows {n0} -> after score/predicted filter {len(df)} -> directed (mechanistic) {len(mech_df)}{' (context only; used for seed rescue)' if mode != 'directed' else ''}, context {len(unddf)}  [mode={mode}]")
     return dirdf, unddf
+
+
+def _omnipath_commercial_resources():
+    """Resource names whose licence OmniPath records as purpose 'commercial' (from /resources; cached). Local filter: the
+    server-side license= parameter is not relied upon."""
+    import json as _json
+    txt = cached_text("omnipath_resources", "https://omnipathdb.org/resources?format=json")
+    res = _json.loads(txt); ok = set()
+    for name, d in res.items():
+        lic = (d.get("license") or {}) if isinstance(d, dict) else {}
+        if str(lic.get("purpose", "")).lower() == "commercial": ok.add(name)
+    return ok
+
+
+def load_omnipath_signed(demo=False, signor_df=None):
+    """
+    OmniPath signed, directed interactions (many literature-curated resources pooled; omnipathdb.org) as a GAP FILLER for
+    SIGNOR: by default (mode: gaps) only edges whose source protein has no SIGNOR output, or whose target has no SIGNOR input,
+    are kept, so curated holes (e.g. ACVRL1 -> SMAD1/5, from SignaLink3) are closed without flooding hubs. mode: full keeps all.
+    Licence: records are kept only if at least one contributing resource is marked purpose=commercial in OmniPath's resource
+    list (e.g. SignaLink3 CC BY-SA 3.0, SIGNOR CC BY 4.0); non-commercial resources (Wang, Cellinker, PhosphoSite, HINT ...) are
+    dropped from the record. Share-alike licences apply if you redistribute a derived database.
+    Columns like load_signor; mechanism lists the retained resources; score = min(1, references/4).
+    """
+    cols = ["src", "dst", "effect", "mechanism", "residue", "source", "score"]
+    empty = pd.DataFrame(columns=cols)
+    mode = (_cfgmod.db(CFG, "omnipath", "mode") or "gaps").lower()
+    if demo or mode == "off": return empty
+    datasets = _cfgmod.db(CFG, "omnipath", "datasets") or "omnipath,pathwayextra,kinaseextra,ligrecextra"
+    loc = _cfgmod.db(CFG, "omnipath", "path")
+    try:
+        if loc and os.path.exists(loc): txt = open(loc).read(); src_note = loc
+        elif loc: raise SystemExit(f"[config] omnipath: configured path not found: {loc}")
+        elif not CFG.get("allow_download", True): print("[OmniPath] offline and no databases.omnipath.path -> layer skipped"); return empty
+        else:
+            url = (OMNIPATH_URL + f"?datasets={datasets}&organisms=9606&genesymbols=1&directed=1&types=post_translational"
+                   "&fields=sources,references,type,is_directed,is_stimulation,is_inhibition")
+            txt = cached_text(f"omnipath_signed_{datasets.replace(',', '_')}", url); src_note = "OmniPath API (cached)"
+        ok = _omnipath_commercial_resources() if (_cfgmod.db(CFG, "omnipath", "license") or "commercial") == "commercial" else None
+    except DownloadError as e:
+        print(f"{e}\n[OmniPath] layer skipped"); return empty
+    df = pd.read_csv(io.StringIO(txt), sep="\t", dtype=str).fillna("")
+    need = {"source_genesymbol", "target_genesymbol", "is_directed", "is_stimulation", "is_inhibition", "sources"}
+    if not need <= set(df.columns): print(f"[OmniPath] unexpected columns {list(df.columns)[:8]} -> layer skipped"); return empty
+    df = df[df.is_directed.astype(str).isin(["1", "True", "true"])]
+    def keep_sources(sv):
+        parts = [x for x in sv.split(";") if x]
+        if ok is None: return parts
+        return [x for x in parts if x in ok or x.split("_")[0] in ok]
+    kept = df.sources.map(keep_sources); df = df[kept.map(len) > 0]; kept = kept[df.index]
+    stim = df.is_stimulation.astype(str).isin(["1", "True", "true"]); inh = df.is_inhibition.astype(str).isin(["1", "True", "true"])
+    eff = (stim & ~inh).astype(int) - (inh & ~stim).astype(int)
+    nref = df.get("references", pd.Series("", index=df.index)).map(lambda r: len([x for x in str(r).split(";") if x]))
+    out = pd.DataFrame({"src": df.source_genesymbol.str.upper(), "dst": df.target_genesymbol.str.upper(), "effect": eff,
+                        "mechanism": kept.map(lambda l: "omnipath:" + "|".join(sorted(set(l)))), "residue": "", "source": "OmniPath",
+                        "score": (nref / 4).clip(lower=0.25, upper=1.0)})
+    out = out[(out.src != out.dst) & (out.src != "") & (out.dst != "")]
+    out = out.sort_values(["effect", "score"], key=lambda c: (c == 0) if c.name == "effect" else -c).drop_duplicates(["src", "dst"])
+    n_lic = len(out)
+    if mode == "gaps" and signor_df is not None and len(signor_df):
+        has_out = set(signor_df.src); has_in = set(signor_df.dst)
+        out = out[~out.src.isin(has_out) | ~out.dst.isin(has_in)]
+    print(f"[OmniPath] source: {src_note}; directed signed edges after licence filter {n_lic} -> {len(out)} used [mode={mode}"
+          + (": only where SIGNOR has no output from the source or no input to the target" if mode == "gaps" else "") + "]")
+    return out
 
 
 REACTOME_DIRECTED = None   # mechanistic directed Reactome FIs from the last load (seed rescue uses them even in mode=context)
