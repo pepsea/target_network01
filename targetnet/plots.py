@@ -598,16 +598,16 @@ def cell_flow_figure(json_path, width=1100, height=820, max_nodes=None, focus=No
             if not d or abs(d["delta"]) < 1e-4: return base + f"<br><b>unchanged by {pert['target']} inhibition</b>"
             return base + (f"<br><b>{d['direction'].upper()} when {pert['target']} is inhibited</b> (delta {d['delta']:+.3f}; {d['entry']}"
                            + (f", via {d['via']}" if d.get("via") else "") + ")")
-        pline = lambda n: "#111" if P.get(n["id"], {}).get("entry") == "direct" else ("#555" if n.get("is_endpoint") else "#aaa")
+        pline = lambda n: "#9A4B00" if n["id"] == pert["target"] else ("#111" if P.get(n["id"], {}).get("entry") == "direct" else ("#555" if n.get("is_endpoint") else "#aaa"))
         _node_trace(fig, [seed], pos, prad, lambda n: COL["seed"] if abs(P.get(n["id"], {}).get("delta", 0.0)) < 1e-4 else pcol(n), lambda n: "#111", phover, "CORE")
         _node_trace(fig, [n for n in nodes if n is not seed], pos, prad, pcol, pline, phover,
                     f"CORE-network node: blue = decreased, red = increased when {pert['target']} is inhibited, grey = unchanged; black outline = direct entry point; size = |delta|", line_w=1.6, label_size=9)
         # TARGET-side entry nodes in the left margin, at the height of their first target; entry edges in the change colour
-        ent = [e for e in pert["edges"] if e["to_node"] in pos]
-        srcs = sorted({e["from_node"] for e in ent}, key=lambda u: -max(abs(e["entry_strength"]) for e in ent if e["from_node"] == u))
+        ent = [e for e in pert["edges"] if e["to_node"] in pos and e["effect_of_target_inhibition_on_to"] != 0]   # zero entries carry no direction
+        srcs = sorted({e["from_node"] for e in ent if e["from_node"] not in pos}, key=lambda u: -max(abs(e["entry_strength"]) for e in ent if e["from_node"] == u))
         ys = {u: pos[next(e for e in ent if e["from_node"] == u)["to_node"]][1] for u in srcs}
         used = []
-        for u in srcs:
+        for u in srcs:                                   # margin placement only for TARGET-side nodes that are not part of the CORE network
             y = ys[u]
             while any(abs(y - v) < 3.2 for v in used): y -= 3.2
             used.append(y); pos[u] = (6, y)
@@ -619,7 +619,9 @@ def cell_flow_figure(json_path, width=1100, height=820, max_nodes=None, focus=No
                                      hovertext=[f"<b>{u}</b> — TARGET side (TARGET {'itself' if u == pert['target'] else 'reaches it'}); acts on: " +
                                                 ", ".join(sorted({e['to_node'] for e in ent if e['from_node'] == u})) for u in srcs],
                                      hoverinfo="text", name=f"{pert['target']} side: entry nodes (orange)", showlegend=True))
+        if True:
             # entry edges: straight lines coloured by the effect of inhibition on the receiving node
+            ent = [e for e in ent if e["from_node"] in pos]
             for colr, lab, sgn in [("#3a6fb0", "entry edge: receiving node decreases", -1), ("#c0392b", "entry edge: receiving node increases", 1)]:
                 xs, ys2 = [], []
                 for e in ent:

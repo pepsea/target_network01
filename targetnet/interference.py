@@ -36,6 +36,7 @@ def interference_flow(G, core_df, core, target, target_df, genes_df=None, max_de
             # shared node (or TARGET itself sitting on the CORE pathway): TARGET's own effect on it is the entry; inhibition flips it
             if u == core and u != target: continue
             val = -sX[u] * scX[u]
+            if val == 0: continue                      # TARGET's sign on this shared node is ambiguous: no directional entry
             entry[u] += val; via[u].add(target)
             entry_edges.append(dict(from_node=target, to_node=u, hops_target_to_from=0, sign_target_to_from=1, edge_effect=int(sX[u]),
                                     weight=round(scX[u], 3), mechanism="TARGET pathway (shared node)" if u != target else "TARGET itself",
