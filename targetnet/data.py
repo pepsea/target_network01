@@ -104,11 +104,27 @@ def load_signor(demo=False):
     types = df.TYPEA.str.lower().str.strip(), df.TYPEB.str.lower().str.strip()
     n_human = len(df)
     df = df[(types[0] == "protein") & (types[1] == "protein")]
+    # DIRECT column: SIGNOR also curates pathway-level (indirect) statements such as "PDGFRA up-regulates AKT1";
+    # these short-circuit the mechanistic route (PDGFRA > PIK3CA > PDPK1 > AKT1) and are dropped by default.
+    indirect_mode = _cfgmod.db(CFG, "signor", "indirect") or "drop"
+    n_pp = len(df)
+    if "DIRECT" in df.columns:
+        direct = df.DIRECT.astype(str).str.strip().str.upper().isin(["YES", "TRUE", "T", "1"])
+        if indirect_mode == "drop":
+            df = df[direct]
+        print(f"[SIGNOR] direct {int(direct.sum())} / indirect {int((~direct).sum())} protein-protein rows -> indirect: {indirect_mode}")
+    else:
+        direct = pd.Series(True, index=df.index)
     eff = df.EFFECT.str.lower().map(lambda e: 1 if "up-regulates" in e else -1 if "down-regulates" in e else 0)
     score = pd.to_numeric(df["SCORE"], errors="coerce") if "SCORE" in df.columns else pd.Series(float("nan"), index=df.index)
+    mech = df.get("MECHANISM", pd.Series("", index=df.index)).fillna("")
+    if "DIRECT" in df.columns and indirect_mode != "drop":
+        d = direct.loc[df.index]
+        mech = mech.where(d, mech + ";indirect")
+        if indirect_mode == "weight":
+            score = score.where(d, score.fillna(0) * 0.3)      # indirect relations: strongly down-weighted
     out = pd.DataFrame({"src": df.ENTITYA.str.upper().str.strip(), "dst": df.ENTITYB.str.upper().str.strip(), "effect": eff,
-                        "mechanism": df.get("MECHANISM", pd.Series("", index=df.index)).fillna(""),
-                        "residue": df.get("RESIDUE", pd.Series("", index=df.index)).fillna(""),
+                        "mechanism": mech, "residue": df.get("RESIDUE", pd.Series("", index=df.index)).fillna(""),
                         "source": "SIGNOR", "score": score})
     out = out[(out.src != out.dst) & (out.src != "") & (out.dst != "")]
     # same pair reported several times: keep the row with a sign (non-zero) and the highest SIGNOR score

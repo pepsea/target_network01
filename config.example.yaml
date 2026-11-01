@@ -5,11 +5,12 @@ cache_dir: ~/data/target_net_cache
 allow_download: true          # false = offline: every database must have a local path
 
 databases:
-  signor:                     # SIGNOR causal interactions dump (tsv), CC-BY 4.0
-    path: ~/data/signor/signor_human.tsv
+  signor:                     # SIGNOR all_data_DD_MM_YY.tsv or API dump, CC-BY 4.0
+    path: ~/Documents/database/signor/all_data_12_07_26.tsv
+    indirect: drop            # drop (default) | weight | keep  -- SIGNOR relations with DIRECT=NO are pathway-level shortcuts
   reactome_fi:                # Reactome FI network with annotations (.txt or .zip), CC0
     path: ~/Documents/database/reactome/FIsInGene_061424_with_annotations.txt
-    mode: directed            # directed | context | off  (context = never used for the walk, only as physical/context layer)
+    mode: context             # context (default) | directed | off  -- FIs collapse whole pathways into one edge; walk on SIGNOR only
     min_score: 1.0            # keep FI score >= this (1.0 = pathway-annotated only; predicted FIs are always dropped)
     weight: 0.5               # walk weight of Reactome-only directed edges (SIGNOR 0.9) -> curated SIGNOR routes win
   tf_list:                    # Lambert 2018 human TFs (DatabaseExtract_v_1.01.csv), CC-BY
@@ -35,8 +36,8 @@ databases:
     path: ~/data/hpa/rna_tissue_consensus.tsv.zip
 
 walk:
-  max_depth: 6
-  min_score: 0.15
+  max_depth: 5
+  min_score: 0.2
   hub_penalty: 0.25
 
 sl:

@@ -17,9 +17,10 @@ DEFAULTS = {
     "cache_dir": "cache",
     "allow_download": True,
     "databases": {
-        "signor":      {"path": None, "url": "https://signor.uniroma2.it/getData.php?organism=9606"},
+        "signor":      {"path": None, "url": "https://signor.uniroma2.it/getData.php?organism=9606",
+                        "indirect": "drop"},     # SIGNOR DIRECT column: drop (default) | weight (keep at low weight) | keep
         "reactome_fi": {"path": None, "url": "https://reactome.org/download/tools/ReatomeFIs/FIsInGene_070323_with_annotations.txt.zip",
-                        "mode": "directed",      # directed = curated activate/inhibit/catalyse FIs join the walk; context = undirected layer only; off
+                        "mode": "context",       # context (default) = undirected context layer only; directed = mechanistic FIs join the walk; off
                         "min_score": 1.0,        # FI score: 1.0 = pathway-annotated; <1 = NBC-predicted (excluded by default)
                         "weight": 0.5},          # edge weight for Reactome-only directed edges (SIGNOR = 0.9)
         "tf_list":     {"path": None, "url": "http://humantfs.ccbr.utoronto.ca/download/v_1.01/DatabaseExtract_v_1.01.csv"},
@@ -34,7 +35,7 @@ DEFAULTS = {
         "depmap":      {"dir": None},                        # folder with CRISPRGeneEffect.csv etc.
         "hpa_tissue":  {"path": None, "url": "https://www.proteinatlas.org/download/rna_tissue_consensus.tsv.zip"},
     },
-    "walk": {"max_depth": 6, "min_score": 0.15, "hub_penalty": 0.25},
+    "walk": {"max_depth": 5, "min_score": 0.2, "hub_penalty": 0.25},
     "sl":   {"min_lost": 20, "padj": 0.05, "delta": 0.15},
 }
 

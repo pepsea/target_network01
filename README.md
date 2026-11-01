@@ -109,11 +109,14 @@ Reactome "functional interactions" collapse whole pathways into gene–gene edge
 By default the loader therefore (a) drops NBC-*predicted* FIs (`min_score: 1.0`), (b) uses an FI's direction only when its
 annotation names a mechanism (activate / inhibit / catalyse / phosphorylate / expression-regulate) — other FIs become
 undirected context edges — and (c) gives Reactome-only directed edges weight 0.5 (SIGNOR 0.9), so curated SIGNOR routes
-win. `reactome_fi.mode: context` removes Reactome from the walk entirely; `off` disables it.
+win. Default is now `mode: context` (walk on SIGNOR direct relations only; Reactome as context layer): on the first live run,
+`mode: directed` still contributed 109k directed FIs vs 15k SIGNOR edges and the AKT1 upstream walk reached 2,667 nodes.
 
 ## SIGNOR input
 Either the API dump or SIGNOR's full download `all_data_DD_MM_YY.tsv` works (`databases.signor.path`). The full file is
 filtered to human (TAX_ID 9606) protein→protein rows; the SIGNOR confidence `SCORE` scales the edge weight (×0.6–1.0).
+Relations with `DIRECT = NO` (pathway-level statements such as "PDGFRA up-regulates AKT1") are dropped by default
+(`signor.indirect: drop | weight | keep`) because they short-circuit the mechanistic route.
 Rows whose entity is a **complex** or **protein family** (e.g. mTORC1, "AKT family") are currently dropped — expanding them to
 member proteins (SIGNOR complexes/families files) is an open item.
 

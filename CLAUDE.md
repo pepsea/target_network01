@@ -25,7 +25,7 @@ Notebooks: `jupyter nbconvert --to notebook --execute notebooks/gene_research.ip
 Expected textbook recovery: AKT1 upstream -> RTKs via PI3K/PDPK1; MAPK1 x AKT1 -> RSK->GSK3B S9, ERK-|SOS1 feedback.
 
 ## Open items
-- Live-data validation: first live AKT1 run showed Reactome FI flooding upstream with 1-hop GPCR->AKT1 edges -> FI filter added (mode/min_score/weight). Re-check receptor list and tune min_score/hub_penalty on live SIGNOR
+- Live-data calibration (AKT1, 2026-11-01): SIGNOR 15,428 direct+indirect pp edges; Reactome FI 'mechanistic' still 109k -> default mode=context; SIGNOR DIRECT=NO dropped; walk defaults max_depth 5 / min_score 0.2. Re-check: upstream/downstream node counts should land ~100-400; receptors for AKT1 via PIK3CA/PDPK1
 - SIGNOR complexes / protein families: expand to member proteins (currently dropped by load_signor)
 - Chaperone/client edge layer (Taipale 2012, Picard list) beyond SIGNOR
 - Cross-talk baseline: same target vs several unrelated core genes
