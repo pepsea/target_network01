@@ -283,9 +283,20 @@ def _focus_edge_style(focus):
 
 
 # --------------------------------------------------------------------------- flow (upstream / downstream)
-def flow_figure(json_path, width=1000, height=650, max_nodes=150, focus=None, caption=True, sub_max=3):
+def _view_cfg(key, default):
+    """Figure budgets from the YAML `view:` section (max_nodes, max_nodes_crosstalk, max_edges_crosstalk, rows_per_column)."""
+    try:
+        from . import data as D
+        v = (D.CFG or {}).get("view") or {}
+        return int(v.get(key, default))
+    except Exception:
+        return default
+
+
+def flow_figure(json_path, width=1000, height=650, max_nodes=None, focus=None, caption=True, sub_max=3):
     """focus: genes to highlight (list / file / dict gene->value); other nodes become small grey dots."""
     F = _load(json_path)
+    if max_nodes is None: max_nodes = _view_cfg("max_nodes", 150)
     fset, fvals = parse_focus(focus); fset_or_none = fset if focus is not None else None
     nodes, edges, capped = _cap_nodes(F["nodes"], F["edges"], max_nodes, per_hop=True)
     F["edges"] = edges; byid = {n["id"]: n for n in nodes}
@@ -300,7 +311,7 @@ def flow_figure(json_path, width=1000, height=650, max_nodes=150, focus=None, ca
     col_x = lambda c: (c + 0.5) / ncol * 100
     if F["mode"] == "upstream": col_x = lambda c, f=col_x: 100 - f(c)
     # a hop with many genes is wrapped into side-by-side sub-columns (at most ROWS genes each) instead of one very tall column
-    ROWS, SUBMAX = 28, sub_max
+    ROWS, SUBMAX = _view_cfg("rows_per_column", 28), sub_max
     slot = 100 / ncol
     pos = {}; nsub = {}
     for c in range(ncol):
@@ -396,8 +407,9 @@ _ZONES = dict(extracellular=(50, 50, 52, 56), membrane=(50, 50, 46, 50), cytosol
               mitochondrion=(80, 32, 0, 9), ER_golgi=(76, 74, 0, 9))   # cx, cy, r_inner, r_outer
 
 
-def cell_map_figure(json_path, width=900, height=700, max_nodes=150, focus=None, caption=True):
+def cell_map_figure(json_path, width=900, height=700, max_nodes=None, focus=None, caption=True):
     N = _load(json_path); fset, fvals = parse_focus(focus); fset_or_none = fset if focus is not None else None
+    if max_nodes is None: max_nodes = _view_cfg("max_nodes", 150)
     nodes, edges, capped = _cap_nodes(N["nodes"], N["edges"], max_nodes, per_hop=True); N["edges"] = edges
     byid = {n["id"]: n for n in nodes}
     if capped: N["mode"] = f"{N.get('mode', '')} (top {max_nodes} of {len(N['nodes'])} nodes)"
@@ -479,9 +491,11 @@ def screen_figure(table_path, width=900, height=600, caption=True, label_top=25)
 
 
 # --------------------------------------------------------------------------- cross-talk (three lanes)
-def crosstalk_figure(json_path, width=1100, height=820, max_nodes=120, max_edges=40, focus=None, caption=True):
+def crosstalk_figure(json_path, width=1100, height=820, max_nodes=None, max_edges=None, focus=None, caption=True):
     """Draws the top `max_edges` interference edges (ranked by proximity to both genes) and the nodes around them."""
     X = _load(json_path); fset, fvals = parse_focus(focus); fset_or_none = fset if focus is not None else None
+    if max_nodes is None: max_nodes = _view_cfg("max_nodes_crosstalk", 120)
+    if max_edges is None: max_edges = _view_cfg("max_edges_crosstalk", 40)   # (crosstalk.max_edges_plot in older yamls is ignored)
     n_all_edges = len(X["interference"])
     X["interference"] = sorted(X["interference"], key=lambda e: (e.get("rank", 0)))[:max_edges]
     keep = {e["from_node"] for e in X["interference"]} | {e["to_node"] for e in X["interference"]}      # the drawn interference edges need their ends

@@ -82,12 +82,18 @@ walk:
   seed_rescue: true             # seed with no edge in the walk direction (SIGNOR gap): add its own mechanistic Reactome FI edges so the walk can start
   seed_rescue_weight: 0.3       # low on purpose: a rescue edge onto a hub must not pull the hub's neighbourhood in (ACVRL1 -> PPP1CA case)
 
+# ---- figures only (tables are never capped) ---------------------------------------------------------------
+view:
+  max_nodes: 150                # flow / cell-map views: highest-scoring genes per hop up to this many (hop-1 views are uncapped)
+  max_nodes_crosstalk: 120      # three-lane cross-talk view
+  max_edges_crosstalk: 40       # interference edges drawn (all are in interference.csv)
+  rows_per_column: 28           # genes per column before a hop wraps into side-by-side sub-columns
+
 # ---- cross-talk mode: deliberately local walks (hubs reach most of the graph at depth 5) -------------------
 crosstalk:
   max_depth: 3
   min_score: 0.4                # local walks on the denser SIGNOR+OmniPath graph (was 0.3 on SIGNOR alone)
   min_sign_confidence: 0.5      # endpoints count as synergistic/antagonistic only when both signs are at least this confident
-  max_edges_plot: 40            # interference edges drawn in the figure (all are in interference.csv)
 
 # ---- synthetic lethality (sl mode / research_gene) --------------------------------------------------------
 sl:
