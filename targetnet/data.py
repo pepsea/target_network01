@@ -375,6 +375,8 @@ def load_compartments(genes, demo=False):
 
 
 # ------------------------------------------------------------------ DepMap
+_DEPMAP = {}
+
 def load_depmap(depmap_dir, gene, candidates, min_lost=None, padj_th=None, delta_th=None):
     """Returns coess {gene: r}, sl_full DataFrame(gene, delta, p, padj, n_lost, significant)."""
     empty = ({}, pd.DataFrame())
@@ -384,12 +386,18 @@ def load_depmap(depmap_dir, gene, candidates, min_lost=None, padj_th=None, delta
     ge_path = os.path.join(depmap_dir, "CRISPRGeneEffect.csv")
     if not os.path.exists(ge_path):
         print("[DepMap] CRISPRGeneEffect.csv not found"); return empty
-    print("[DepMap] loading gene effect ...")
-    ge = pd.read_csv(ge_path, index_col=0); ge.columns = [c.split(" (")[0].upper() for c in ge.columns]
+    if _DEPMAP.get("path") == ge_path:
+        ge = _DEPMAP["ge"]
+    else:
+        print("[DepMap] loading gene effect (once per session) ...")
+        ge = pd.read_csv(ge_path, index_col=0); ge.columns = [c.split(" (")[0].upper() for c in ge.columns]
+        _DEPMAP.update(path=ge_path, ge=ge)
     if gene not in ge.columns:
         print(f"[DepMap] {gene} not in matrix"); return empty
     a = ge[gene]
-    coess = {g: float(ge[g].corr(a)) for g in candidates if g in ge.columns and not np.isnan(ge[g].corr(a))}
+    cols = [g for g in candidates if g in ge.columns]
+    corr = ge[cols].corrwith(a) if cols else pd.Series(dtype=float)
+    coess = {g: float(r) for g, r in corr.items() if not np.isnan(r)}
     lost = set()
     mut_path = os.path.join(depmap_dir, "OmicsSomaticMutations.csv")
     if os.path.exists(mut_path):
@@ -407,13 +415,16 @@ def load_depmap(depmap_dir, gene, candidates, min_lost=None, padj_th=None, delta
     if len(lost) < min_lost:
         print("[DepMap] too few lost lines -> no SL test"); return coess, pd.DataFrame()
     from scipy import stats
-    li = ge.index.isin(lost); rows = []
-    for g in ge.columns:
-        x, y = ge.loc[li, g].dropna(), ge.loc[~li, g].dropna()
-        if len(x) < 10 or len(y) < 10: continue
-        _, p = stats.ttest_ind(x, y, equal_var=False)
-        rows.append((g, float(x.mean() - y.mean()), float(p), len(x)))
-    full = pd.DataFrame(rows, columns=["gene", "delta", "p", "n_lost"])
+    li = ge.index.isin(lost)
+    X, Y = ge.loc[li], ge.loc[~li]                       # vectorised Welch t-test over all genes at once
+    nx_, ny_ = X.notna().sum(), Y.notna().sum()
+    ok = (nx_ >= 10) & (ny_ >= 10)
+    mx, my = X.mean(), Y.mean(); vx, vy = X.var(ddof=1), Y.var(ddof=1)
+    se = np.sqrt(vx / nx_ + vy / ny_)
+    t = (mx - my) / se
+    dfree = (vx / nx_ + vy / ny_) ** 2 / ((vx / nx_) ** 2 / (nx_ - 1) + (vy / ny_) ** 2 / (ny_ - 1))
+    pvals = 2 * stats.t.sf(np.abs(t), dfree)
+    full = pd.DataFrame({"gene": ge.columns, "delta": (mx - my).values, "p": pvals, "n_lost": nx_.values})[ok.values].reset_index(drop=True)
     full["padj"] = bh_fdr(full.p.values)
     full["significant"] = (full.padj < padj_th) & (full.delta < -delta_th)
     print(f"[DepMap] {int(full.significant.sum())} SL candidates")
