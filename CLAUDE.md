@@ -10,6 +10,7 @@ Network-based drug-target research around a core gene. Entry points: `target_net
 - `targetnet/templates/` D3 views: flow.html, cell_map.html, crosstalk.html, sl_plot.html (each view also written as .json)
 - `targetnet/plots.py`   Plotly versions of the four views for inline notebook use (read the .json next to each view)
 - `fetch_depmap.py`      DepMap downloader (portal API, Figshare fallback)
+- `docs/DATA_SETUP.md`   manual for every database file; `scripts/setup_data.sh` downloads the automatic ones
 
 ## Conventions (owner's preferences)
 - Python; minimal first version, then extend. Notebook/py code: a comment or markdown cell above each block explaining it.

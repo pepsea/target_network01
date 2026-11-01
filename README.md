@@ -12,6 +12,10 @@ python target_net.py crosstalk  --causal AKT1 --goi MAPK1 # 2    does gene X inf
 Add `--demo` to any command for an offline smoke test on a curated AKT1 / MAPK1 axis (no internet needed;
 the DepMap part of the demo is **simulated** and labelled as such).
 
+## Data files
+`docs/DATA_SETUP.md` lists every database (source page, command, expected file, licence, update cadence);
+`bash scripts/setup_data.sh ~/Documents/database` downloads everything that can be fetched automatically.
+
 ## Configuration (YAML)
 Copy `config.example.yaml` to `target_net.yaml` (project root) or `~/.target_net.yaml` and set the local paths of each
 database; anything left `null` is downloaded into `cache_dir` when `allow_download: true`. `--config FILE` / `config=` overrides.

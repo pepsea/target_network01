@@ -24,6 +24,7 @@ If two genes are given and it is not clear which is the core gene, ask once. The
 All database paths are read from a YAML file, searched in this order: `--config`/`config=` argument →
 `$TARGETNET_CONFIG` → `./target_net.yaml` → `~/.target_net.yaml` → built-in defaults (download on demand).
 
+0. Database files: `docs/DATA_SETUP.md` says where each file comes from; `bash scripts/setup_data.sh <root>` fetches the automatic ones.
 1. Look for `target_net.yaml` in the project root or `~/.target_net.yaml`. If none exists, copy `config.example.yaml`
    to `target_net.yaml` and fill in the paths the user already has locally. Ask the user for locations of local copies
    only if the listing / `~/data` search finds nothing; do not download gigabytes without saying so.
