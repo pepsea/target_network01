@@ -1,7 +1,7 @@
 # target_net configuration -- copy to ./target_net.yaml (or ~/.target_net.yaml) and edit the paths.
 # Any path left null is downloaded on demand into cache_dir (if allow_download is true).
 
-cache_dir: ~/data/target_net_cache
+cache_dir: ~/Documents/database/target_net_cache
 allow_download: true          # false = offline: every database must have a local path
 
 databases:
@@ -14,7 +14,7 @@ databases:
     min_score: 1.0            # keep FI score >= this (1.0 = pathway-annotated only; predicted FIs are always dropped)
     weight: 0.5               # walk weight of Reactome-only directed edges (SIGNOR 0.9) -> curated SIGNOR routes win
   tf_list:                    # Lambert 2018 human TFs (DatabaseExtract_v_1.01.csv), CC-BY
-    path: ~/data/tf/DatabaseExtract_v_1.01.csv
+    path: ~/Documents/database/tf/DatabaseExtract_v_1.01.csv
   uniprot:                    # bulk human reviewed UniProt tsv (fields: accession, gene_primary, keyword, cc_subcellular_location)
     path: ~/Documents/database/uniprot/uniprot_human_reviewed.tsv   # gives receptors + compartments offline; download once:
     # curl -o uniprot_human_reviewed.tsv "https://rest.uniprot.org/uniprotkb/stream?query=organism_id:9606+AND+reviewed:true&fields=accession,gene_primary,keyword,cc_subcellular_location&format=tsv"
@@ -30,10 +30,10 @@ databases:
     min_score: 700            # STRING physical network, experimental+database channels, via API
   compartments:               # tsv: gene <TAB> compartment (membrane|cytosol|lysosome|mitochondrion|ER_golgi|nucleus); null = UniProt API
     path: null
-  depmap:                     # folder with CRISPRGeneEffect.csv [, OmicsSomaticMutations.csv, OmicsExpressionProteinCodingGenesTPMLogp1.csv]
-    dir: ~/data/depmap
+  depmap:                     # folder with CRISPRGeneEffect.csv, OmicsSomaticMutations.csv, OmicsExpression*ProteinCoding*.csv (either release name)
+    dir: ~/Documents/database/depmap
   hpa_tissue:                 # HPA rna_tissue_consensus.tsv(.zip), CC BY-SA (filter only)
-    path: ~/data/hpa/rna_tissue_consensus.tsv.zip
+    path: ~/Documents/database/hpa/rna_tissue_consensus_tissues.tsv
 
 walk:
   max_depth: 5
