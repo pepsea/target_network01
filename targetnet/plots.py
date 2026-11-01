@@ -63,6 +63,7 @@ CAPTIONS = {
  "crosstalk": [
   "LANES  left = nodes reached only from the core (causal) gene · centre = reached from both · right = reached only from the gene of interest (GOI). Row ≈ hops from the respective seed.",
   "THIN GREY LINES = ordinary signaling edges of the two pathways (▶ activation, ┃ inhibition, dotted = unknown sign).",
+  "DOTTED BLUE straight line = physical contact between the GOI side and the core pathway with NO signed edge in any database (STRING experimental/database channels, Reactome undirected) — e.g. chaperone-client; listed in physical_contacts.csv.",
   "COLOURED LINES = interference edges: a GOI-side node acting on a core-pathway node. green = pushes that node the same way as the core gene (synergistic) · red = opposite way (antagonistic) · grey = undetermined.",
   "       long-dashed = chaperone / protein-stability edge rather than phosphorylation. Only the top-ranked edges (by proximity to both genes) are drawn; all are in interference.csv. Hover the midpoint for residue and mechanism.",
   "NODES  black diamonds = the two analysed genes (core, target) · purple = shared · light blue = core pathway · orange = GOI pathway; black outline = TF endpoint; size ∝ path score.",
@@ -471,6 +472,16 @@ def crosstalk_figure(json_path, width=1100, height=820, max_nodes=120, max_edges
     enr = f"TF-overlap enrichment {s.get('tf_enrichment')} (p={s.get('tf_overlap_p', float('nan')):.1g})" if s.get("tf_enrichment") is not None else f"index {s['crosstalk_index']}"
     fig = _base(f"Cross-talk: does {X['goi']} influence the {X['causal']} pathway?  {enr} · showing top {len(X['interference'])} of {n_all_edges} interference edges"
                 + (f" · {max_nodes} of {len(X['nodes'])} nodes" if capped else "") + f" · endpoints syn/ant/mixed {s['synergistic']}/{s['antagonistic']}/{s['mixed']}", width, height)
+    contacts = [c for c in X.get("contacts", []) if c["goi_side"] in pos and c["core_side"] in pos]
+    if contacts:   # physical contact without a signed edge (STRING / Reactome): dotted straight line, no direction
+        xs, ys = [], []
+        for c in contacts:
+            xs += [pos[c["goi_side"]][0], pos[c["core_side"]][0], None]; ys += [pos[c["goi_side"]][1], pos[c["core_side"]][1], None]
+        fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines", line=dict(color="#7a9cc6", width=1.6, dash="dot"), hoverinfo="skip",
+                                 name=f"physical contact {X['goi']}-side – {X['causal']} pathway (no signed edge; STRING / Reactome)"))
+        mx = [(pos[c["goi_side"]][0] + pos[c["core_side"]][0]) / 2 for c in contacts]; my = [(pos[c["goi_side"]][1] + pos[c["core_side"]][1]) / 2 for c in contacts]
+        fig.add_trace(go.Scatter(x=mx, y=my, mode="markers", marker=dict(size=5, color="#7a9cc6"), hoverinfo="text", showlegend=False,
+                                 hovertext=[f"physical contact {c['goi_side']} – {c['core_side']} ({c['source']}); no direction / sign in the databases" for c in contacts]))
     _edge_traces(fig, X["edges"], pos, rad, color_fn=(lambda e: "#bbbbbb") if focus is None else (lambda e: "#999999" if (e["source"] in fset or e["target"] in fset) else "#d4d4d4"),
                  dash_fn=lambda e: "dot" if e.get("effect", 1) == 0 else "solid", width=0.8)
     inter = [dict(source=e["from_node"], target=e["to_node"], effect=e["edge_effect"], agreement=e["agreement"], mech=e.get("mechanism", ""), res=e.get("residue", "")) for e in X["interference"]]

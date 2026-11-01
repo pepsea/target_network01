@@ -55,8 +55,10 @@ databases:
     license: commercial         # OmniPath per-record licence filter: commercial | academic | ignore
     path: ~/Documents/database/dorothea/dorothea_ABC_commercial.tsv  # OmniPath export, or tf,target,mor,confidence; null = download
   omnipath:
-    mode: gaps                  # gaps (default): OmniPath signed edges only where SIGNOR has no output from the source / no input to the target
-                                # (closes curation holes such as ACVRL1 -> SMAD1/5 without flooding hubs) | full | off
+    mode: gaps                  # gaps (default): OmniPath signed edges only where SIGNOR has no output from the source / no input to the target,
+                                # PLUS every edge touching the analysed gene(s) (so "is there a direct X-C edge?" never depends on SIGNOR coverage) | full | off
+    signed_only: true           # drop directed-but-unsigned records (they add nodes without a sign)
+    min_references: 1           # keep records with at least this many literature references
     datasets: omnipath,pathwayextra,kinaseextra,ligrecextra
     license: commercial         # keep a record only if a contributing resource is marked purpose=commercial by OmniPath (local filter)
     path: null                  # null = download once into cache_dir; or a saved OmniPath interactions tsv (genesymbols=1, fields=sources,references,...)

@@ -235,7 +235,7 @@ def _omnipath_commercial_resources():
     return ok
 
 
-def load_omnipath_signed(demo=False, signor_df=None):
+def load_omnipath_signed(demo=False, signor_df=None, seeds=()):
     """
     OmniPath signed, directed interactions (many literature-curated resources pooled; omnipathdb.org) as a GAP FILLER for
     SIGNOR: by default (mode: gaps) only edges whose source protein has no SIGNOR output, or whose target has no SIGNOR input,
@@ -279,12 +279,22 @@ def load_omnipath_signed(demo=False, signor_df=None):
                         "score": (nref / 4).clip(lower=0.25, upper=1.0)})
     out = out[(out.src != out.dst) & (out.src != "") & (out.dst != "")]
     out = out.sort_values(["effect", "score"], key=lambda c: (c == 0) if c.name == "effect" else -c).drop_duplicates(["src", "dst"])
+    if _cfgmod.db(CFG, "omnipath", "signed_only") in (None, True):      # unsigned directed edges add nodes but no sign -> noise in the walk
+        out = out[out.effect != 0]
+    minref = int(_cfgmod.db(CFG, "omnipath", "min_references") or 1)
+    if minref > 1: out = out[out.score * 4 >= minref]
     n_lic = len(out)
+    seeds = {str(g).upper() for g in (seeds or ()) if g}
     if mode == "gaps" and signor_df is not None and len(signor_df):
         has_out = set(signor_df.src); has_in = set(signor_df.dst)
-        out = out[~out.src.isin(has_out) | ~out.dst.isin(has_in)]
-    print(f"[OmniPath] source: {src_note}; directed signed edges after licence filter {n_lic} -> {len(out)} used [mode={mode}"
-          + (": only where SIGNOR has no output from the source or no input to the target" if mode == "gaps" else "") + "]")
+        gap = ~out.src.isin(has_out) | ~out.dst.isin(has_in)
+        local = out.src.isin(seeds) | out.dst.isin(seeds)              # every edge touching an analysed gene: the direct-interaction question must not depend on SIGNOR coverage
+        out = out[gap | local]
+        n_local = int((local & ~gap).sum())
+    else:
+        n_local = 0
+    print(f"[OmniPath] source: {src_note}; signed directed edges after licence filter {n_lic} -> {len(out)} used [mode={mode}"
+          + (f": where SIGNOR has no output from the source or no input to the target, plus {n_local} edges incident to {', '.join(sorted(seeds)) or 'the seed'}" if mode == "gaps" else "") + "]")
     return out
 
 

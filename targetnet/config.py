@@ -35,7 +35,7 @@ DEFAULTS = {
         "compartments":{"path": None},                       # tsv: gene<TAB>compartment (else UniProt API)
         "depmap":      {"dir": None},                        # folder with CRISPRGeneEffect.csv etc.
         "custom_edges": {"path": None},
-        "omnipath": {"mode": "gaps", "datasets": "omnipath,pathwayextra,kinaseextra,ligrecextra", "license": "commercial", "path": None},
+        "omnipath": {"mode": "gaps", "datasets": "omnipath,pathwayextra,kinaseextra,ligrecextra", "license": "commercial", "path": None, "signed_only": True, "min_references": 1},
         "hpa_tissue":  {"path": None, "url": "https://www.proteinatlas.org/download/rna_tissue_consensus.tsv.zip"},
     },
     "walk": {"max_depth": 5, "min_score": 0.25, "hub_penalty": 0.25, "seed_rescue": True},

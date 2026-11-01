@@ -39,11 +39,12 @@ COMPARTMENTS = ["extracellular", "membrane", "cytosol", "lysosome", "mitochondri
 
 # ----------------------------------------------------------------------------- shared setup
 def build_signaling(args):
+    seeds = [resolve_symbol(g) for g in (getattr(args, "gene", None), getattr(args, "causal", None), getattr(args, "goi", None)) if g]
     sig = D.load_signor(args.demo)
     parts = [sig]; und = pd.DataFrame(columns=["a", "b", "source"])
     if not args.no_reactome:
         rd, und = D.load_reactome_fi(args.reactome_fi, args.demo); parts.append(rd)
-    omni = D.load_omnipath_signed(args.demo, signor_df=sig)
+    omni = D.load_omnipath_signed(args.demo, signor_df=sig, seeds=seeds)
     if len(omni): parts.append(omni)
     cust = D.load_custom_edges(args.demo)
     if len(cust): parts.append(cust)
@@ -322,8 +323,28 @@ def run_crosstalk(args):
     for r in (res["gene_agreement"].itertuples() if len(res["gene_agreement"]) else []):
         endpoints.append(dict(name=r.gene, layer="gene", tf_from_causal=r.tf_from_causal, tf_from_goi=r.tf_from_goi,
                               sign_from_causal=int(r.sign_from_causal), sign_from_goi=int(r.sign_from_goi), agreement=r.agreement))
+    # physical contacts (STRING experimental/database channels + Reactome undirected) between X / X's hop-1 nodes and C's pathway:
+    # the evidence layer for chaperone-client and scaffold relations that signed databases rarely curate (e.g. HSP90 - FGFR3)
+    xside = {X} | set(dX.node[dX.hops == 1]); cside = {C} | set(dC.node)
+    contacts = []
+    try:
+        st = D.load_string(xside | cside, demo=args.demo)
+        st = pd.concat([st, und[und.a.isin(xside | cside) & und.b.isin(xside | cside)]], ignore_index=True) if len(und) else st
+        for r in st.drop_duplicates(["a", "b"]).itertuples():
+            for u, v in ((r.a, r.b), (r.b, r.a)):
+                if u in xside and v in cside and not G.has_edge(u, v) and not G.has_edge(v, u):
+                    contacts.append(dict(goi_side=u, core_side=v, hops_goi=0 if u == X else 1, hops_causal=0 if v == C else int(dC.set_index("node").hops[v]), source=r.source))
+    except Exception as e:
+        print(f"[contacts] skipped: {e}")
+    contacts = pd.DataFrame(contacts).drop_duplicates(["goi_side", "core_side"]) if contacts else pd.DataFrame(columns=["goi_side", "core_side", "hops_goi", "hops_causal", "source"])
+    if len(contacts): contacts = contacts.sort_values(["hops_goi", "hops_causal"]).reset_index(drop=True)
+    contacts.to_csv(os.path.join(out, "physical_contacts.csv"), index=False)
+    direct = contacts[(contacts.hops_goi == 0) & (contacts.hops_causal == 0)]
+    print(f"[contacts] {len(contacts)} physical contacts between {X} (+hop-1) and the {C} pathway without a signed edge"
+          + (f"; DIRECT {X} - {C} contact in {', '.join(direct.source)}" if len(direct) else f"; no direct {X} - {C} contact in STRING/Reactome"))
     payload = dict(causal=C, goi=X, summary=res["summary"], nodes=nodes, edges=_edges(G, {n["id"] for n in nodes}),
-                   interference=json.loads(res["interference"].to_json(orient="records")) if len(res["interference"]) else [], endpoints=endpoints)
+                   interference=json.loads(res["interference"].to_json(orient="records")) if len(res["interference"]) else [], endpoints=endpoints,
+                   contacts=json.loads(contacts.to_json(orient="records")) if len(contacts) else [])
     write_html("crosstalk.html", "/*__XT_JSON__*/", payload, os.path.join(out, "crosstalk.html"), d3=getattr(args, "d3", False))
     # impact of X on C's main pathway: table + the core flow view recoloured by impact
     imp = Wk.impact_on_core(G, dC, C, X, res); imp.to_csv(os.path.join(out, "impact.csv"), index=False)
