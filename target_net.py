@@ -189,7 +189,7 @@ def run_upstream(args):
     G, und = build_signaling(args)
     receptors = D.load_receptors(args.demo); ligands = D.load_ligands(args.demo) - receptors
     Wk.prepare_seed(G, gene, "up", D.CFG, D.REACTOME_DIRECTED)
-    df = Wk.signed_walk(G, gene, receptors | ligands, direction="up", max_depth=args.max_depth, min_score=args.min_score, hub_strength=args.hub_penalty, extend_to=ligands)
+    df = Wk.signed_walk(G, gene, receptors | ligands, direction="up", max_depth=args.max_depth, min_score=args.min_score, hub_strength=args.hub_penalty, extend_to=ligands, score_mode=D.CFG.get("walk", {}).get("score_mode", "relative"))
     _stop_if_empty(df, gene, "upstream", args)
     df, comp = annotate(df, G, gene, args, und)
     df["endpoint_type"] = ["ligand" if n in ligands else "receptor" if n in receptors else "" for n in df.node]
@@ -222,7 +222,7 @@ def run_downstream(args, gene=None, quiet=False, exclude=(), G=None, und=None, t
     Wk.prepare_seed(G, gene, "down", D.CFG, D.REACTOME_DIRECTED)
     through_tf = bool(D.CFG.get("walk", {}).get("through_tf", True))
     df = Wk.signed_walk(G, gene, tfs, direction="down", max_depth=args.max_depth, min_score=args.min_score, hub_strength=args.hub_penalty,
-                        stop_at_endpoints=not through_tf)
+                        stop_at_endpoints=not through_tf, score_mode=D.CFG.get("walk", {}).get("score_mode", "relative"))
     _stop_if_empty(df, gene, "downstream", args, exclude)
     regulon = D.load_regulon(args.regulon, args.conf, args.regulon_file, args.demo)
     genes = Wk.extend_regulon(df, regulon, tfs, args.max_targets)
@@ -320,7 +320,8 @@ def run_pathway_interference(args):
     H = G.copy(); H.remove_nodes_from([C] if C in H else [])
     Wk.prepare_seed(H, X, "down", D.CFG, D.REACTOME_DIRECTED)
     dX = Wk.signed_walk(H, X, tfs, direction="down", max_depth=args.max_depth, min_score=args.min_score, hub_strength=args.hub_penalty,
-                        stop_at_endpoints=not bool(D.CFG.get("walk", {}).get("through_tf", True))) if X in H else Wk.EMPTY_WALK.copy()
+                        stop_at_endpoints=not bool(D.CFG.get("walk", {}).get("through_tf", True)),
+                        score_mode=D.CFG.get("walk", {}).get("score_mode", "relative")) if X in H else Wk.EMPTY_WALK.copy()
     res = I.interference_flow(G, dC, C, X, dX, genes_df=gC, max_depth=args.max_depth, hub_strength=args.hub_penalty)
     res["nodes"].to_csv(os.path.join(out, "flow_change.csv"), index=False)
     res["edges"].to_csv(os.path.join(out, "entry_edges.csv"), index=False)
@@ -352,12 +353,14 @@ def run_calibrate(args):
     receptors = D.load_receptors(args.demo); ligands = D.load_ligands(args.demo) - receptors; tfs = D.load_tfs(args.demo)
     Wk.prepare_seed(G, gene, "up", D.CFG, D.REACTOME_DIRECTED); Wk.prepare_seed(G, gene, "down", D.CFG, D.REACTOME_DIRECTED)
     scores = [float(x) for x in args.scores.split(",")]; hubs = [float(x) for x in args.hubs.split(",")]
-    print(f"\n[calibrate] {gene}: graph {G.number_of_nodes()} nodes / {G.number_of_edges()} edges; max_depth {args.max_depth}")
+    print(f"\n[calibrate] {gene}: graph {G.number_of_nodes()} nodes / {G.number_of_edges()} edges; max_depth {args.max_depth}; score_mode {D.CFG.get('walk', {}).get('score_mode', 'relative')}; through_tf {D.CFG.get('walk', {}).get('through_tf', True)}")
     print(f"{'hub_penalty':>11} {'min_score':>9} | {'up nodes':>8} {'receptors':>9} {'ligands':>7} {'<=2 hops':>8} | {'down nodes':>10} {'TFs':>5} {'<=2 hops':>8}")
     for h in hubs:
         for ms in scores:
-            up = Wk.signed_walk(G, gene, receptors | ligands, direction="up", max_depth=args.max_depth, min_score=ms, hub_strength=h, extend_to=ligands)
-            dn = Wk.signed_walk(G, gene, tfs, direction="down", max_depth=args.max_depth, min_score=ms, hub_strength=h)
+            sm = D.CFG.get("walk", {}).get("score_mode", "relative")
+            up = Wk.signed_walk(G, gene, receptors | ligands, direction="up", max_depth=args.max_depth, min_score=ms, hub_strength=h, extend_to=ligands, score_mode=sm)
+            dn = Wk.signed_walk(G, gene, tfs, direction="down", max_depth=args.max_depth, min_score=ms, hub_strength=h, score_mode=sm,
+                                stop_at_endpoints=not bool(D.CFG.get("walk", {}).get("through_tf", True)))
             nrec = int(up.node.isin(receptors).sum()); nlig = int(up.node.isin(ligands).sum())
             print(f"{h:>11.2f} {ms:>9.2f} | {len(up):>8} {nrec:>9} {nlig:>7} {int((up.hops <= 2).sum()):>8} | {len(dn):>10} {int(dn.is_endpoint.sum()):>5} {int((dn.hops <= 2).sum()):>8}")
     print("\nPick the min_score where the receptor list is a few dozen textbook inputs (not hundreds) and set walk.min_score in target_net.yaml.")

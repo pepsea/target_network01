@@ -66,7 +66,8 @@ EMPTY_WALK = pd.DataFrame({"node": pd.Series(dtype=str), "hops": pd.Series(dtype
                            "ambiguous": pd.Series(dtype=bool), "is_endpoint": pd.Series(dtype=bool), "best_path": pd.Series(dtype=str)})
 
 
-def signed_walk(G, seed, endpoints, direction="down", max_depth=6, min_score=0.15, hub_strength=0.25, extend_to=None, stop_at_endpoints=True):
+def signed_walk(G, seed, endpoints, direction="down", max_depth=6, min_score=0.15, hub_strength=0.25, extend_to=None, stop_at_endpoints=True,
+                score_mode="relative"):
     """
     Returns DataFrame: node, hops, score, sign(+1/-1/0 mixed), ambiguous(bool), is_endpoint, best_path (list)
     direction 'down' follows edges src->dst; 'up' follows them backwards (src is the upstream regulator).
@@ -74,6 +75,9 @@ def signed_walk(G, seed, endpoints, direction="down", max_depth=6, min_score=0.1
     extend_to: nodes an endpoint may still step into (upstream: receptors -> their ligands); those are endpoints too, so the walk ends there.
     stop_at_endpoints=False: endpoints are still flagged (is_endpoint) but the walk continues through them (downstream: past TFs to the
     transcriptional-regulation edges of the graph, e.g. SMAD1 -> ID1), governed by min_score / max_depth alone.
+    score_mode="relative": min_score is applied to the path score DIVIDED BY the seed's strongest first hop, so a seed whose own
+    edges are weakly scored (ACVRL1 -> SMAD1 at 0.60) walks as deep as a seed with strong edges (AKT1 at 0.85); the reported score
+    stays absolute. "absolute": min_score applies to the raw path score.
     """
     extend_to = extend_to or set()
     if seed not in G:
@@ -82,6 +86,12 @@ def signed_walk(G, seed, endpoints, direction="down", max_depth=6, min_score=0.1
     nbrs = (lambda n: G.successors(n)) if direction == "down" else (lambda n: G.predecessors(n))
     edge = (lambda a, b: G[a][b]) if direction == "down" else (lambda a, b: G[b][a])
 
+    if score_mode == "relative":
+        first = [edge(seed, m)["weight"] * pen.get(m, 1.0) for m in nbrs(seed) if m != seed]
+        s1 = max(first) if first else 1.0
+        thr = min_score * min(1.0, s1)
+    else:
+        thr = min_score
     # best[(node, sign)] = (score, hops, path, ambiguous)
     best = {(seed, 1): (1.0, 0, [seed], False)}
     heap = [(-1.0, 0, seed, 1)]
@@ -98,7 +108,7 @@ def signed_walk(G, seed, endpoints, direction="down", max_depth=6, min_score=0.1
             ns = score * e["weight"] * pen.get(m, 1.0)
             # direct neighbours of the seed (hop 1) and the receptor -> ligand step are never score-gated:
             # they are reported even when weak, but a weak hop-1 node is not expanded further (its children fall below min_score)
-            if ns < min_score and not (at_end or n == seed): continue
+            if ns < thr and not (at_end or n == seed): continue
             eff = e["effect"]; amb = best[(n, sgn)][3] or eff == 0
             nsgn = sgn * (eff if eff != 0 else 1)
             key = (m, nsgn)
@@ -122,7 +132,7 @@ def signed_walk(G, seed, endpoints, direction="down", max_depth=6, min_score=0.1
         first = [(m, round(edge(seed, m)["weight"] * pen.get(m, 1.0), 3)) for m in nbrs(seed)]
         first.sort(key=lambda t: -t[1])
         print(f"[walk] {seed} ({direction}): 0 nodes reached. {len(first)} direct neighbours in this direction; "
-              + (f"best first-hop score {first[0][1]} ({first[0][0]}) < min_score {min_score} -> lower min_score or hub_penalty"
+              + (f"best first-hop score {first[0][1]} ({first[0][0]}) < threshold {thr:.3f} -> lower min_score or hub_penalty"
                  if first else "the seed has no edges in this direction in the loaded graph (or they were removed)"))
         return EMPTY_WALK.copy()
     if len(df):
