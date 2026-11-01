@@ -33,7 +33,9 @@ def _args(**kw):
 
 
 def _read(path):
-    return pd.read_csv(path) if os.path.exists(path) else pd.DataFrame()
+    if not os.path.exists(path): return pd.DataFrame()
+    try: return pd.read_csv(path)
+    except pd.errors.EmptyDataError: return pd.DataFrame()
 
 
 def research_gene(gene, run_sl=None, **options):
