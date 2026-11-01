@@ -22,7 +22,7 @@ if _HERE not in sys.path:
 import target_net as cli  # noqa: E402
 
 DEFAULTS = dict(out="runs", d3=False, config=None, demo=False, max_depth=None, min_score=None, hub_penalty=None, tissue=None, expressed_file=None,
-                no_reactome=False, reactome_fi=None, depmap=None, regulon=None, conf=None, regulon_file=None, max_targets=None)
+                no_reactome=False, reactome_fi=None, depmap=None, regulon=None, conf=None, regulon_file=None, max_targets=None, n_random=20, seed=0)
 
 
 def _args(**kw):
@@ -198,6 +198,29 @@ def show(html_path, height=650):
     if not os.path.exists(html_path):
         print(f"(no view at {html_path})"); return
     display(IFrame(src=os.path.relpath(html_path), width="100%", height=height))
+
+
+def screen_crosstalk(core, targets, **options):
+    """
+    Rank a list of candidate target genes by their cross-talk with one core (disease-causal) gene.
+    targets: list, plain text ("AKT1 MTOR GSK3B"), or a text/CSV file. Options as research_crosstalk, plus n_random (baseline
+    size, default 20) and seed. Returns dict(table=ranked DataFrame, edges=top interference edges per target, run_dir, view).
+    Score axes: interference_score, tf_enrichment (tf_p), dependency, net_direction, baseline_z -> composite (see targetnet/screen.py).
+    """
+    a = _args(**options); cli.apply_config(a); a.causal = core; a.goi_list = targets
+    a._explicit_depth = options.get("max_depth") is not None; a._explicit_score = options.get("min_score") is not None
+    tab = cli.run_crosstalk_screen(a)
+    out = f"{a.run_dir}/screen"
+    return dict(core=cli.resolve_symbol(core), table=tab, edges=_read(f"{out}/screen_edges.csv"), baseline=_read(f"{out}/baseline_random.csv"),
+                run_dir=a.run_dir, view=f"{out}/screen.html")
+
+
+def screen_figure(x, **kw):
+    """Plotly figure for a screen_crosstalk() result (or a path to screen.csv)."""
+    from . import plots
+    tab = x["table"] if isinstance(x, dict) else x
+    if isinstance(x, dict): tab.attrs["core"] = x.get("core", "")
+    return plots.screen_figure(tab, **kw)
 
 
 def summarize_gene(r, n=10):

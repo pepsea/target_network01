@@ -235,6 +235,34 @@ def run_downstream(args, gene=None, quiet=False, exclude=(), G=None, und=None):
     return G, df, genes
 
 
+# ----------------------------------------------------------------------------- mode: cross-talk screen (core vs a list of targets)
+def run_crosstalk_screen(args):
+    from targetnet import screen as Sc
+    C = resolve_symbol(args.causal)
+    targets = [resolve_symbol(t) for t in Sc.parse_targets(args.goi_list)]
+    out = os.path.join(run_dir(args, f"crosstalk_screen_{C}_{len(targets)}targets"), "screen"); os.makedirs(out, exist_ok=True)
+    G, und = build_signaling(args)
+    xt = D.CFG.get("crosstalk", {})
+    if not getattr(args, "_explicit_depth", False): args.max_depth = xt.get("max_depth", 3)
+    if not getattr(args, "_explicit_score", False): args.min_score = xt.get("min_score", 0.3)
+    tfs = D.load_tfs(args.demo); regulon = D.load_regulon(args.regulon, args.conf, args.regulon_file, args.demo)
+    print(f"[screen] core {C} vs {len(targets)} targets; walks max_depth {args.max_depth}, min_score {args.min_score}; baseline {args.n_random} random genes")
+    res = Sc.screen(G, C, targets, tfs, regulon, max_depth=args.max_depth, min_score=args.min_score, hub=args.hub_penalty,
+                    min_conf=xt.get("min_sign_confidence", 0.5), max_targets=args.max_targets, n_random=args.n_random, seed=args.seed)
+    tab = res["table"]; tab.attrs["core"] = C
+    tab.to_csv(os.path.join(out, "screen.csv"), index=False)
+    if len(res["edges"]): res["edges"].to_csv(os.path.join(out, "screen_edges.csv"), index=False)
+    if len(res["baseline"]): res["baseline"].to_csv(os.path.join(out, "baseline_random.csv"), index=False)
+    json.dump(dict(core=C, targets=targets, core_nodes=res["core_nodes"], skipped=res["skipped"], max_depth=args.max_depth, min_score=args.min_score),
+              open(os.path.join(out, "screen_info.json"), "w"), indent=1)
+    if len(tab):
+        from targetnet import plots as P
+        P.screen_figure(tab).write_html(os.path.join(out, "screen.html"), include_plotlyjs="cdn")
+        print(f"\n[screen] ranked {len(tab)} targets -> {out}/screen.csv")
+        print(tab.head(15)[["rank", "target", "interference_score", "n_interference", "tf_enrichment", "tf_p", "dependency", "net_direction", "baseline_z", "composite"]].to_string(index=False))
+    return tab
+
+
 # ----------------------------------------------------------------------------- mode: synthetic lethality
 def run_sl(args):
     gene = resolve_symbol(args.gene); out = os.path.join(run_dir(args, f"sl_{gene}"), "sl"); os.makedirs(out, exist_ok=True)
@@ -428,6 +456,10 @@ def main():
     p.add_argument("--save", default=None); p.add_argument("--config", default=None)
     p.add_argument("--source", default=None); p.add_argument("--conf", default=None); p.add_argument("--license", default=None)
     p = sub.add_parser("crosstalk"); p.add_argument("--causal", required=True); p.add_argument("--goi", required=True); common(p); regulon_opts(p)
+    p = sub.add_parser("crosstalk-screen", help="rank a list of candidate target genes by their cross-talk with one core gene")
+    p.add_argument("--causal", required=True); p.add_argument("--goi-list", required=True, help="genes: 'A B C', 'A,B,C' or a text/CSV file (first column)")
+    p.add_argument("--n-random", type=int, default=20, help="degree-matched random genes for the baseline (0 = off)"); p.add_argument("--seed", type=int, default=0)
+    common(p); regulon_opts(p)
     args = ap.parse_args()
     args._explicit_depth = getattr(args, "max_depth", None) is not None
     args._explicit_score = getattr(args, "min_score", None) is not None
@@ -459,7 +491,7 @@ def main():
         return
     apply_config(args)
     try:
-        {"upstream": run_upstream, "downstream": run_downstream, "sl": run_sl, "crosstalk": run_crosstalk}[args.mode](args)
+        {"upstream": run_upstream, "downstream": run_downstream, "sl": run_sl, "crosstalk": run_crosstalk, "crosstalk-screen": run_crosstalk_screen}[args.mode](args)
     except D.DownloadError as e:
         sys.exit(str(e))
 

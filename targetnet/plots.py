@@ -11,7 +11,8 @@ Note on size: plotly.js itself is ~3.5 MB. Use the CDN renderer so it is NOT emb
     import plotly.io as pio; pio.renderers.default = "notebook_connected"
 (`use_cdn_renderer()` below does this). The figures themselves are small (a few hundred KB at most).
 """
-import json, math
+import json, math, os
+import pandas as pd
 from collections import defaultdict
 import plotly.graph_objects as go
 
@@ -346,6 +347,49 @@ def cell_map_figure(json_path, width=900, height=700, max_nodes=150, focus=None,
     fig.update_xaxes(range=[-8, 108], scaleanchor="y"); fig.update_yaxes(range=[-2, 102])
     _edge_legend(fig, ("act", "inh", "amb", "phys"))
     if caption: add_caption(fig, "cell_map")
+    return fig
+
+
+# --------------------------------------------------------------------------- cross-talk screen (ranked targets)
+def screen_figure(table_path, width=900, height=600, caption=True, label_top=25):
+    """
+    One point per candidate target gene screened against the core gene.
+    x = interference score (edges from the target's pathway into the core pathway, proximity-weighted),
+    y = TF-overlap enrichment (observed / expected shared TFs), size = dependency (share of the core pathway lost when the
+    target is removed), fill = net direction (teal = synergistic, brown = antagonistic, grey = balanced / none).
+    Top-right, large, strongly coloured = strong, directional cross-talk.
+    """
+    tab = pd.read_csv(table_path) if isinstance(table_path, str) else table_path
+    if not len(tab): return _base("cross-talk screen: no targets scored", width, height)
+    core = tab.attrs.get("core", "") if hasattr(tab, "attrs") else ""
+    fig = _base(f"cross-talk screen{(' against ' + core) if core else ''}: {len(tab)} candidate targets", width, height)
+    def col(d):
+        if d > 0.2: return "#3f8f8f"
+        if d < -0.2: return "#b36b3c"
+        return "#9a9a9a"
+    size = 8 + 30 * tab.dependency.clip(0, 1)
+    txt = [r.target if r["rank"] <= label_top else "" for _, r in tab.iterrows()]
+    hv = [f"<b>{r.target}</b>  rank {r['rank']}<br>interference {r.interference_score:.2f} ({r.n_interference} edges)"
+          f"<br>TF enrichment {r.tf_enrichment:.2f}, p = {r.tf_p:.2g}<br>dependency {r.dependency:.2f}"
+          f"<br>synergistic {r.synergistic} / antagonistic {r.antagonistic} -> direction {r.net_direction:+.2f}"
+          + (f"<br>baseline z {r.baseline_z:+.2f} (pct {r.baseline_pct})" if pd.notna(r.get("baseline_z", float("nan"))) else "")
+          + f"<br>{r.top_edges}" for _, r in tab.iterrows()]
+    fig.add_trace(go.Scatter(x=tab.interference_score, y=tab.tf_enrichment, mode="markers+text", text=txt, textposition="top center",
+                             textfont=dict(size=10), marker=dict(size=size, color=[col(d) for d in tab.net_direction], line=dict(color="#333", width=1)),
+                             hovertext=hv, hoverinfo="text", name="candidate target", showlegend=False))
+    for name, c in [("synergistic with core", "#3f8f8f"), ("antagonistic to core", "#b36b3c"), ("balanced / none", "#9a9a9a")]:
+        fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers", marker=dict(size=10, color=c, line=dict(color="#333", width=1)), name=name))
+    fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers", marker=dict(size=22, color="#fff", line=dict(color="#333", width=1)), name="size = dependency of core on target"))
+    xmax = max(0.5, float(tab.interference_score.max()) * 1.15); ymax = max(1.5, float(tab.tf_enrichment.max()) * 1.2)
+    fig.update_xaxes(visible=True, showticklabels=True, title="interference score (proximity-weighted edges into the core pathway)", showgrid=True, gridcolor="#eee", zeroline=False, range=[-0.03 * xmax, xmax], linecolor="#999")
+    fig.update_yaxes(visible=True, showticklabels=True, title="TF-overlap enrichment (observed / expected shared TFs)", showgrid=True, gridcolor="#eee", zeroline=False, range=[-0.05 * ymax, ymax], linecolor="#999")
+    fig.add_hline(y=1.0, line=dict(color="#bbb", width=1, dash="dot"), annotation_text="enrichment = 1 (chance)", annotation_font=dict(size=9, color="#888"), annotation_position="bottom right")
+    fig.update_layout(showlegend=True, legend=dict(orientation="h", y=-0.18))
+    if caption:
+        fig.add_annotation(xref="paper", yref="paper", x=0, y=-0.3, showarrow=False, align="left", font=dict(size=10, color="#555"),
+                           text="Each point = one candidate target screened against the core gene (local walks). Ranking table: screen.csv (composite = mean percentile of "
+                                "interference, enrichment, dependency; baseline_z vs degree-matched random genes). Direction is a property, not a magnitude.")
+        fig.update_layout(margin=dict(b=150))
     return fig
 
 

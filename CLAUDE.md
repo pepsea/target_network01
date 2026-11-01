@@ -7,6 +7,7 @@ Network-based drug-target research around a core gene. Entry points: `target_net
 - `targetnet/config.py`  YAML config: database paths, download policy, walk/SL thresholds (`config.example.yaml` -> `target_net.yaml`)
 - `targetnet/data.py`    loaders (SIGNOR, Reactome FI, STRING, UniProt, Lambert TFs, DoRothEA/OmniPath, DepMap, HPA) + curated demo data
 - `targetnet/walk.py`    signed best-path walk (node set, score) + signed influence propagation (consensus sign, influence); regulon extension; cross-talk logic
+- `targetnet/screen.py`  cross-talk screen: one core gene vs a list of targets -> interference score, TF enrichment, dependency, direction, degree-matched random baseline, composite rank (notebooks/crosstalk_screen.ipynb, CLI crosstalk-screen)
 - `targetnet/plots.py`   the four views as Plotly figures (notebook inline AND the .html files in run folders; built from the .json next to each view)
 - `targetnet/templates/` original D3 pages, written only with --d3 as <view>_d3.html
 - `fetch_depmap.py`      DepMap downloader (portal API, Figshare fallback)
@@ -20,7 +21,7 @@ Network-based drug-target research around a core gene. Entry points: `target_net
 - Plots: flat, muted colours, white background, English labels.
 
 ## Test
-`for m in "upstream --gene AKT1" "downstream --gene AKT1" "sl --gene AKT1" "crosstalk --causal FGFR3 --goi HSP90AA2"; do python target_net.py $m --demo; done`
+`for m in "upstream --gene AKT1" "downstream --gene AKT1" "sl --gene AKT1" "crosstalk --causal FGFR3 --goi HSP90AA2" "crosstalk-screen --causal FGFR3 --goi-list AKT1,MAPK1,HSP90AA2 --n-random 5"; do python target_net.py $m --demo; done`
 Notebooks: `jupyter nbconvert --to notebook --execute notebooks/gene_research.ipynb --output /tmp/t.ipynb`
 Expected textbook recovery: AKT1 upstream -> RTKs via PI3K/PDPK1; MAPK1 x AKT1 -> RSK->GSK3B S9, ERK-|SOS1 feedback.
 
@@ -31,5 +32,5 @@ Expected textbook recovery: AKT1 upstream -> RTKs via PI3K/PDPK1; MAPK1 x AKT1 -
 - OmniPath gap filler (2026-11-01): databases.omnipath mode=gaps adds licence-filtered (purpose=commercial, local filter via /resources) OmniPath signed edges only where SIGNOR lacks output/input; closes ACVRL1 -> SMAD1 (SignaLink3). mode=full needs recalibration (not done)
 - Seed partners (2026-11-01): partners.csv = physical/complex partners of the seed from the context layer with their own signed outputs; NOT walked (type II -> type I receptor logic makes output-borrowing wrong). Complex-mediated routes go through custom_edges
 - Chaperone/client edge layer (Taipale 2012, Picard list) beyond SIGNOR
-- Cross-talk: live AKT1 x ACVR1B gave index 1.0 / 2,265 nodes (hub saturation) -> local walks (depth 3, min_score 0.3), hypergeometric TF-overlap enrichment, confidence-gated agreement, proximity-ranked edges. Still to do: automatic baseline (same target vs N random core genes)
+- Cross-talk: live AKT1 x ACVR1B gave index 1.0 / 2,265 nodes (hub saturation) -> local walks (depth 3, min_score 0.3), hypergeometric TF-overlap enrichment, confidence-gated agreement, proximity-ranked edges. Automatic baseline now exists in the screen (degree-matched random targets vs the same core, baseline_z); the single-pair notebook still has none
 - Boolean/logic simulation of the signed graph
