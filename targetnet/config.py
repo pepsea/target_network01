@@ -28,6 +28,7 @@ DEFAULTS = {
         "uniprot":     {"path": None, "url": "https://rest.uniprot.org/uniprotkb/stream?query=organism_id:9606+AND+reviewed:true&fields=accession,gene_primary,keyword,cc_subcellular_location&format=tsv"},
                                                              # bulk human reviewed UniProt tsv -> receptors + compartments offline
         "receptors":   {"path": None},                       # txt, one gene symbol per line (overrides uniprot bulk; else UniProt API)
+        "ligands":     {"path": None},                       # txt, one gene symbol per line (overrides the UniProt-derived secreted-ligand list)
         "regulon":     {"source": "dorothea", "conf": "ABC", "path": None, "license": "commercial"},
                                                              # local tsv (OmniPath export or tf,target,mor,confidence); else OmniPath query
                                                              # license: commercial | academic | ignore  (OmniPath per-record licence filter)
@@ -38,9 +39,10 @@ DEFAULTS = {
         "omnipath": {"mode": "full", "datasets": "omnipath,pathwayextra,kinaseextra,ligrecextra", "license": "commercial", "path": None, "signed_only": True, "min_references": 1},
         "hpa_tissue":  {"path": None, "url": "https://www.proteinatlas.org/download/rna_tissue_consensus.tsv.zip"},
     },
-    "walk": {"max_depth": 5, "min_score": 0.35, "hub_penalty": 0.3, "seed_rescue": True, "through_tf": True, "score_mode": "relative"},
+    "walk": {"max_depth": 5, "min_score": 0.35, "hub_penalty": 0.3, "seed_rescue": True, "seed_rescue_weight": 0.3,
+             "through_tf": True, "score_mode": "relative"},
     "view": {"max_nodes": 150, "max_nodes_crosstalk": 120, "max_edges_crosstalk": 40, "rows_per_column": 28},   # figure budgets only; tables are never capped
-    "crosstalk": {"max_depth": 3, "min_score": 0.4, "min_sign_confidence": 0.5, "max_edges_plot": 40},   # local walks: cross-talk is proximal interference
+    "crosstalk": {"max_depth": 3, "min_score": 0.4, "min_sign_confidence": 0.5},   # local walks: cross-talk is proximal interference (plot budget -> view.max_edges_crosstalk)
     "sl":   {"min_lost": 20, "padj": 0.05, "delta": 0.15},
 }
 
