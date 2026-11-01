@@ -165,7 +165,8 @@ def research_crosstalk(core, target, **options):
     endpoints = pd.concat([tf.assign(layer="tf").rename(columns={"node": "name"}), ge.assign(layer="gene").rename(columns={"gene": "name"})], ignore_index=True) \
         if len(tf) or len(ge) else pd.DataFrame()
     return dict(core=C, target=X, run_dir=root, summary=summary, shared=_read(f"{out}/shared.csv"), interference=_read(f"{out}/interference.csv"),
-                endpoints=endpoints, views=dict(crosstalk=f"{out}/crosstalk.html", core_flow=f"{root}/downstream_{C}_without_{X}/flow.html",
+                endpoints=endpoints, impact=_read(f"{out}/impact.csv"),
+                views=dict(crosstalk=f"{out}/crosstalk.html", core_impact=f"{out}/core_impact.html", core_flow=f"{root}/downstream_{C}_without_{X}/flow.html",
                                                 target_flow=f"{root}/downstream_{X}_without_{C}/flow.html"))
 
 
@@ -180,7 +181,7 @@ def figure(view_path, focus=None, **kw):
     if not os.path.exists(jp):
         print(f"(no view at {jp})"); return None
     kind = os.path.basename(jp)
-    fn = plots.flow_figure if kind.startswith("flow") else plots.cell_map_figure if kind.startswith("cell_map") else \
+    fn = plots.flow_figure if kind.startswith(("flow", "core_impact")) else plots.cell_map_figure if kind.startswith("cell_map") else \
          plots.crosstalk_figure if kind.startswith("crosstalk") else plots.volcano_figure
     if fn is plots.volcano_figure: kw.pop("focus", None)
     return fn(jp, **kw)

@@ -41,6 +41,13 @@ def _base(title, w=1000, h=650):
 
 
 CAPTIONS = {
+ "impact": [
+  "IMPACT VIEW  the core gene's own downstream pathway (walked with the target gene removed), recoloured by what the target gene does to each node.",
+  "NODES  green = target activates this node directly (interference edge into it), red = inhibits directly, dark grey = mixed; purple = shared (target's own pathway also reaches it);",
+  "       light green / light red = indirect (inherits the effect along the core pathway's own edges); pale grey = not influenced at this depth.",
+  "OUTLINE green = target pushes the node the same way as the core gene (synergistic), red = opposite way (antagonistic), grey = mixed. Hover: which target-side node acts on it.",
+  "LINES  the core pathway's own signaling edges (▶ activation, ┃ inhibition). Columns = hops from the core gene. Full table: impact.csv (node, impact, net_sign_from_goi, agreement, via).",
+  "READ   red OUTLINE = the target opposes the core gene there (inhibiting the target releases that node); green outline = same direction. Direct nodes at hop 1-2 are the mechanistically closest points; the TF column shows where the influence reaches transcription."],
  "flow": [
   "LINES  dark grey curve = signaling edge from the signed graph (SIGNOR direct relations, plus custom_edges if configured; Reactome FI only if mode=directed or as seed rescue — hover an edge for its source); it runs from regulator to target.",
   "       ▶ arrowhead = activation / up-regulation · ┃ bar head = inhibition / down-regulation · dotted grey = relation of unknown sign.",
@@ -292,11 +299,39 @@ def flow_figure(json_path, width=1000, height=650, max_nodes=150, focus=None, ca
     outline = lambda n: COL["syn"] if n["sign"] == 1 else COL["ant"] if n["sign"] == -1 else COL["mix"]
     fk = dict(focus=fset_or_none, values=fvals)
     _node_trace(fig, [n for n in nodes if n["cls"] == "seed"], pos, rad, lambda n: COL["seed"], lambda n: "#111", hover, "seed", **fk)
-    _node_trace(fig, [n for n in nodes if n.get("is_endpoint") and not is_lig(n)], pos, rad, lambda n: COL["endpoint"], outline, hover,
-                "endpoint (receptor / TF); outline green = activated, red = inhibited", line_w=2.2, **fk)
-    _node_trace(fig, [n for n in nodes if is_lig(n)], pos, rad, lambda n: COL["ligand"], outline, hover,
-                "ligand (secreted cytokine / growth factor / hormone)", line_w=2.2, **fk)
-    _node_trace(fig, [n for n in nodes if n["cls"] != "seed" and not n.get("is_endpoint")], pos, rad, lambda n: COL["node"], outline, hover, "intermediate", line_w=2.2, **fk)
+    imp = F.get("impact")
+    if imp and focus is None:
+        # IMPACT MODE (crosstalk core_impact view): the core pathway recoloured by what the target gene does to each node
+        X = F.get("impact_from", "target")
+        IMP_COL = {("direct", 1): "#2e7d32", ("direct", -1): "#b23b3b", ("direct", 0): "#6d6d6d",
+                   ("shared", 1): "#6b5b95", ("shared", -1): "#6b5b95", ("shared", 0): "#6b5b95",
+                   ("indirect", 1): "#9fcf9f", ("indirect", -1): "#e3a3a3", ("indirect", 0): "#c9c9c9"}
+        def icol(n):
+            d = imp.get(n["id"]); 
+            return "#e9e9e9" if not d or d["impact"] == "none" else IMP_COL.get((d["impact"], int(d["net"])), "#c9c9c9")
+        def ihover(n):
+            d = imp.get(n["id"]) or dict(impact="none", net=0, via="", agreement="")
+            tag = {"direct": f"DIRECT: {X}-side node(s) {d['via']} act on it", "shared": f"SHARED: {X} reaches it independently",
+                   "indirect": f"INDIRECT: inherits {X}'s effect along the core pathway", "none": f"not reached by {X}"}[d["impact"]]
+            eff = {1: "activates", -1: "inhibits", 0: "mixed"}[int(d["net"])] if d["impact"] != "none" else ""
+            return hover(n) + f"<br><b>{tag}</b>" + (f"<br>{X} {eff} this node -> {d['agreement']} with the core gene" if eff else "")
+        AGR = {"synergistic": COL["syn"], "antagonistic": COL["ant"], "mixed": COL["mix"]}
+        def iline(n):
+            d = imp.get(n["id"]); return AGR.get(d["agreement"], "#999") if d and d["impact"] != "none" else "#bbb"
+        groups = [("direct", f"direct target of {X}: fill green = {X} activates it, red = inhibits, grey = mixed; OUTLINE green = same direction as {F['seed']} (synergistic), red = opposite (antagonistic)", 3.0),
+                  ("shared", f"shared: reached by {X}'s own pathway too (purple)", 2.4),
+                  ("indirect", f"indirect: downstream of an influenced node inside the {F['seed']} pathway (light tint)", 1.6),
+                  ("none", f"not influenced by {X}", 1.0)]
+        for kind, name, lw in groups:
+            sel = [n for n in nodes if n["cls"] != "seed" and (imp.get(n["id"], {"impact": "none"})["impact"] == kind)]
+            _node_trace(fig, sel, pos, rad, icol, iline, ihover, name, line_w=lw)
+        fig.update_layout(title_text=f"impact of {X} on the {F['seed']} pathway  —  " + F.get("subtitle", ""))
+    else:
+        _node_trace(fig, [n for n in nodes if n.get("is_endpoint") and not is_lig(n)], pos, rad, lambda n: COL["endpoint"], outline, hover,
+                    "endpoint (receptor / TF); outline green = activated, red = inhibited", line_w=2.2, **fk)
+        _node_trace(fig, [n for n in nodes if is_lig(n)], pos, rad, lambda n: COL["ligand"], outline, hover,
+                    "ligand (secreted cytokine / growth factor / hormone)", line_w=2.2, **fk)
+        _node_trace(fig, [n for n in nodes if n["cls"] != "seed" and not n.get("is_endpoint")], pos, rad, lambda n: COL["node"], outline, hover, "intermediate", line_w=2.2, **fk)
     # gene summary per TF (downstream)
     if F.get("genes"):
         per = defaultdict(list)
@@ -315,7 +350,7 @@ def flow_figure(json_path, width=1000, height=650, max_nodes=150, focus=None, ca
                            showarrow=False, font=dict(size=10, color="#888"))
     fig.update_xaxes(range=[-2, 130 if F.get("genes") else 104]); fig.update_yaxes(range=[0, 102])
     _edge_legend(fig, ("act", "inh", "amb") + (("faded",) if focus is not None else ()))
-    if caption: add_caption(fig, "flow")
+    if caption: add_caption(fig, "impact" if (imp and focus is None) else "flow")
     return fig
 
 

@@ -265,6 +265,54 @@ def crosstalk(G, causal_df, goi_df, causal, goi, causal_genes=None, goi_genes=No
                 gene_agreement=mk(gene_rows, GENE_COLS), summary=summary)
 
 
+def impact_on_core(G, causal_df, causal, goi, res):
+    """
+    Which genes of the core (causal) pathway does the target (goi) influence, and how?
+      direct   : node v receives an interference edge u -> v from an X-only node u (net = sign(X->u) x effect(u->v))
+      shared   : node reached by X's own walk as well (X acts on it independently of C)
+      indirect : node downstream of a direct/shared node inside C's pathway (influence inherited along C's own edges)
+      none     : untouched by X at this depth
+    Returns DataFrame: node, hops_from_causal, impact, net_sign_from_goi (+1/-1/0 mixed), causal_sign, agreement, via (sources), n_edges.
+    """
+    DC = [causal] + list(causal_df.node)
+    hC = dict(zip(causal_df.node, causal_df.hops)); hC[causal] = 0
+    sC = dict(zip(causal_df.node, causal_df.sign)); sC[causal] = 1
+    inter = res["interference"]; shared = res["shared"]
+    info = {}
+    if len(inter):
+        for v, g in inter.groupby("to_node"):
+            nets = set(int(x) for x in g.net_effect_of_goi_on_target if x != 0)
+            net = nets.pop() if len(nets) == 1 else 0
+            info[v] = dict(impact="direct", net=net, via=";".join(sorted(set(g.from_node))), n=len(g))
+    if len(shared):
+        for r in shared.itertuples():
+            if r.node not in info:
+                info[r.node] = dict(impact="shared", net=int(r.sign_from_goi), via=goi, n=0)
+    # indirect: propagate along C's edges inside the core pathway (signed BFS from direct/shared nodes)
+    core = set(DC); frontier = [(v, d["net"]) for v, d in info.items()]
+    seen = dict(frontier)
+    while frontier:
+        nxt = []
+        for v, sg in frontier:
+            for w in G.successors(v):
+                if w not in core or w in info: continue
+                eff = G[v][w]["effect"]; nsg = 0 if (sg == 0 or eff == 0) else sg * eff
+                if w in seen:
+                    if seen[w] != nsg: seen[w] = 0
+                    continue
+                seen[w] = nsg; nxt.append((w, nsg))
+        frontier = nxt
+    for w, sg in seen.items():
+        if w not in info: info[w] = dict(impact="indirect", net=sg, via="", n=0)
+    rows = []
+    for v in DC:
+        d = info.get(v, dict(impact="none", net=0, via="", n=0))
+        rows.append(dict(node=v, hops_from_causal=hC.get(v, 0), impact=d["impact"], net_sign_from_goi=d["net"], causal_sign=sC.get(v, 0),
+                         agreement=(_agree(sC.get(v, 0), d["net"]) if d["impact"] != "none" else ""), via=d["via"], n_edges=d["n"]))
+    order = {"direct": 0, "shared": 1, "indirect": 2, "none": 3}
+    return pd.DataFrame(rows).sort_values(["impact", "hops_from_causal"], key=lambda c: c.map(order) if c.name == "impact" else c).reset_index(drop=True)
+
+
 def _agree(a, b):
     if a == 0 or b == 0: return "mixed"
     return "synergistic" if a == b else "antagonistic"

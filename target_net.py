@@ -79,7 +79,7 @@ def write_html(tpl, token, payload, path, d3=False):
     try:
         from targetnet import plots as P
         kind = os.path.basename(jp)
-        fn = P.flow_figure if kind.startswith("flow") else P.cell_map_figure if kind.startswith("cell_map") else \
+        fn = P.flow_figure if kind.startswith(("flow", "core_impact")) else P.cell_map_figure if kind.startswith("cell_map") else \
              P.crosstalk_figure if kind.startswith("crosstalk") else P.volcano_figure
         fn(jp).write_html(path, include_plotlyjs="cdn", full_html=True)
     except Exception as e:   # plotly missing or figure error: fall back to the D3 page so a view always exists
@@ -325,6 +325,14 @@ def run_crosstalk(args):
     payload = dict(causal=C, goi=X, summary=res["summary"], nodes=nodes, edges=_edges(G, {n["id"] for n in nodes}),
                    interference=json.loads(res["interference"].to_json(orient="records")) if len(res["interference"]) else [], endpoints=endpoints)
     write_html("crosstalk.html", "/*__XT_JSON__*/", payload, os.path.join(out, "crosstalk.html"), d3=getattr(args, "d3", False))
+    # impact of X on C's main pathway: table + the core flow view recoloured by impact
+    imp = Wk.impact_on_core(G, dC, C, X, res); imp.to_csv(os.path.join(out, "impact.csv"), index=False)
+    core_flow = json.load(open(os.path.join(run_dir(args, f"crosstalk_{C}_x_{X}"), f"downstream_{C}_without_{X}", "flow.json")))
+    core_flow["impact"] = {r.node: dict(impact=r.impact, net=int(r.net_sign_from_goi), agreement=r.agreement, via=r.via) for r in imp.itertuples()}
+    core_flow["impact_from"] = X
+    write_html("flow.html", "/*__FLOW_JSON__*/", core_flow, os.path.join(out, "core_impact.html"), d3=False)
+    ni = imp.impact.value_counts().to_dict()
+    print(f"\n[impact] {X} on the {C} pathway: direct {ni.get('direct', 0)}, shared {ni.get('shared', 0)}, indirect {ni.get('indirect', 0)}, untouched {ni.get('none', 0)} -> {out}/impact.csv, core_impact.html")
     s = res["summary"]
     print(f"\n[crosstalk] {X} vs {C} pathway -> {out}/   (each pathway walked with the other gene removed)")
     print(f"  cross-talk index {s['crosstalk_index']}  (shared endpoints {s['n_shared_endpoints']} / causal endpoints {s['n_endpoints_causal']})")
