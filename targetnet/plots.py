@@ -16,7 +16,7 @@ from collections import defaultdict
 import plotly.graph_objects as go
 
 # flat, muted palette on white (owner's convention)
-COL = dict(seed="#1f3a5f", endpoint="#2d5f8f", node="#8a8a8a", shared="#6b5b95", causal="#4a7fb5", goi="#b36b3c",
+COL = dict(seed="#1f3a5f", endpoint="#2d5f8f", ligand="#3f8f8f", node="#8a8a8a", shared="#6b5b95", causal="#4a7fb5", goi="#b36b3c",
            syn="#2e7d32", ant="#b23b3b", mix="#888888", edge="#777777", amb="#bbbbbb", phys="#c8c8c8")
 FONT = dict(family="Helvetica, Arial, sans-serif", size=11, color="#222")
 
@@ -46,11 +46,11 @@ CAPTIONS = {
   "       Line thickness ∝ edge confidence (SIGNOR score). Only edges among drawn nodes are shown; the walk itself used the whole graph.",
   "NODES  dark blue = seed gene · blue = endpoint (receptor in upstream view, transcription factor in downstream view) · grey = intermediate.",
   "       Fill saturation ∝ path score. Outline: green = seed activates this node (consensus over all paths), red = inhibits, grey dashed = mixed; long dashes = feedback node (also upstream of the seed).",
-  "COLUMNS hop N = shortest number of edges from the seed; endpoints are collected in the last column. Right-hand boxes: DoRothEA target genes per TF (↑ induced, ↓ repressed by the seed); hover to list them.",
+  "COLUMNS hop N = shortest number of edges from the seed; endpoints are collected in the last column(s): upstream = receptors, then their secreted ligands (teal; UniProt Secreted + Cytokine/Growth factor/Hormone); downstream = TFs. Right-hand boxes: DoRothEA target genes per TF (↑ induced, ↓ repressed by the seed); hover to list them.",
   "FOCUS  with a focus list: focus genes are orange with bold dark-orange labels (blue→red fill instead when a value such as log2FC is supplied); all other nodes small grey; edges not touching a focus gene are lighter."],
  "cell_map": [
   "LINES  dark grey curve with ▶ (activation) or ┃ (inhibition) = signaling edge; dotted light grey straight line = physical contact only (STRING / Reactome undirected), no direction or sign.",
-  "NODES  placed by UniProt subcellular location (membrane ring, cytosol ring, nucleus, lysosome, mitochondrion, ER/Golgi); position inside a zone is arbitrary.",
+  "NODES  placed by UniProt subcellular location (secreted ligands outside the membrane ring, membrane ring, cytosol ring, nucleus, lysosome, mitochondrion, ER/Golgi); position inside a zone is arbitrary.",
   "       dark blue = seed · blue = receptor · purple = TF · light blue = upstream node · grey = downstream node; size ∝ path score; grey outline = mixed sign."],
  "crosstalk": [
   "LANES  left = nodes reached only from the core (causal) gene · centre = reached from both · right = reached only from the gene of interest (GOI). Row ≈ hops from the respective seed.",
@@ -251,8 +251,10 @@ def flow_figure(json_path, width=1000, height=650, max_nodes=150, focus=None, ca
     F["genes"] = [g for g in F.get("genes", []) if g["tf"] in byid]
     # columns: intermediates by hop, endpoints in one final column; upstream mode is drawn right-to-left
     max_mid = max([n["hops"] for n in nodes if not n.get("is_endpoint")] or [0])
-    for n in nodes: n["col"] = max_mid + 1 if n.get("is_endpoint") else n["hops"]
-    ncol = max_mid + 2
+    is_lig = lambda n: n.get("endpoint_type") == "ligand"
+    has_lig = any(is_lig(n) for n in nodes)
+    for n in nodes: n["col"] = max_mid + 2 if is_lig(n) else max_mid + 1 if n.get("is_endpoint") else n["hops"]
+    ncol = max_mid + (3 if has_lig else 2)
     col_x = lambda c: (c + 0.5) / ncol * 100
     if F["mode"] == "upstream": col_x = lambda c, f=col_x: 100 - f(c)
     pos = {}
@@ -276,8 +278,10 @@ def flow_figure(json_path, width=1000, height=650, max_nodes=150, focus=None, ca
     outline = lambda n: COL["syn"] if n["sign"] == 1 else COL["ant"] if n["sign"] == -1 else COL["mix"]
     fk = dict(focus=fset_or_none, values=fvals)
     _node_trace(fig, [n for n in nodes if n["cls"] == "seed"], pos, rad, lambda n: COL["seed"], lambda n: "#111", hover, "seed", **fk)
-    _node_trace(fig, [n for n in nodes if n.get("is_endpoint")], pos, rad, lambda n: COL["endpoint"], outline, hover,
+    _node_trace(fig, [n for n in nodes if n.get("is_endpoint") and not is_lig(n)], pos, rad, lambda n: COL["endpoint"], outline, hover,
                 "endpoint (receptor / TF); outline green = activated, red = inhibited", line_w=2.2, **fk)
+    _node_trace(fig, [n for n in nodes if is_lig(n)], pos, rad, lambda n: COL["ligand"], outline, hover,
+                "ligand (secreted cytokine / growth factor / hormone)", line_w=2.2, **fk)
     _node_trace(fig, [n for n in nodes if n["cls"] != "seed" and not n.get("is_endpoint")], pos, rad, lambda n: COL["node"], outline, hover, "intermediate", line_w=2.2, **fk)
     # gene summary per TF (downstream)
     if F.get("genes"):
@@ -292,7 +296,8 @@ def flow_figure(json_path, width=1000, height=650, max_nodes=150, focus=None, ca
         fig.add_trace(go.Scatter(x=xs, y=ys, mode="text", text=txt, textposition="middle right", textfont=dict(size=9, color="#444"),
                                  hovertext=hv, hoverinfo="text", name="target genes (hover)", showlegend=True))
     for c in range(ncol):
-        fig.add_annotation(x=col_x(c), y=99, text=("seed" if c == 0 else ("receptors" if F["mode"] == "upstream" else "TFs") if c == ncol - 1 else f"hop {c}"),
+        label = "seed" if c == 0 else ("ligands" if (has_lig and c == ncol - 1) else ("receptors" if F["mode"] == "upstream" else "TFs") if c == ncol - (2 if has_lig else 1) else f"hop {c}")
+        fig.add_annotation(x=col_x(c), y=99, text=label,
                            showarrow=False, font=dict(size=10, color="#888"))
     fig.update_xaxes(range=[-2, 130 if F.get("genes") else 104]); fig.update_yaxes(range=[0, 102])
     _edge_legend(fig, ("act", "inh", "amb") + (("faded",) if focus is not None else ()))
@@ -301,7 +306,7 @@ def flow_figure(json_path, width=1000, height=650, max_nodes=150, focus=None, ca
 
 
 # --------------------------------------------------------------------------- cell map (location view)
-_ZONES = dict(membrane=(50, 50, 46, 50), cytosol=(50, 50, 22, 32), nucleus=(50, 50, 0, 13), lysosome=(20, 32, 0, 9),
+_ZONES = dict(extracellular=(50, 50, 52, 56), membrane=(50, 50, 46, 50), cytosol=(50, 50, 22, 32), nucleus=(50, 50, 0, 13), lysosome=(20, 32, 0, 9),
               mitochondrion=(80, 32, 0, 9), ER_golgi=(76, 74, 0, 9))   # cx, cy, r_inner, r_outer
 
 
@@ -319,9 +324,11 @@ def cell_map_figure(json_path, width=900, height=700, max_nodes=150, focus=None,
     rad = lambda nid: 2.0 if byid[nid]["cls"] == "seed" else 0.9 + 1.4 * byid[nid]["score"]
     fig = _base(f"{N.get('mode', '')} of {N['seed']} (location view)", width, height)
     for comp, (cx, cy, ri, ro) in _ZONES.items():
-        if comp == "cytosol": continue
+        if comp in ("cytosol", "extracellular"): continue      # extracellular = outside the membrane ring (no circle of its own)
         fig.add_shape(type="circle", x0=cx - ro, y0=cy - ro * 0.85, x1=cx + ro, y1=cy + ro * 0.85, line=dict(color="#999", width=1.2))
         fig.add_annotation(x=cx, y=cy + ro * 0.85 + 2, text=comp.replace("_", "/"), showarrow=False, font=dict(size=10, color="#888"))
+    if any(n["compartment"] == "extracellular" for n in nodes):
+        fig.add_annotation(x=50, y=1.5, text="extracellular (secreted ligands)", showarrow=False, font=dict(size=10, color="#888"))
     fig.add_annotation(x=50, y=84, text="cytosol", showarrow=False, font=dict(size=10, color="#888"))
     _edge_traces(fig, [e for e in N["edges"] if e["kind"] == "signaling"], pos, rad, color_fn=_focus_edge_style(fset_or_none))
     phys = [e for e in N["edges"] if e["kind"] != "signaling"]
@@ -331,12 +338,12 @@ def cell_map_figure(json_path, width=900, height=700, max_nodes=150, focus=None,
             if e["source"] in pos and e["target"] in pos:
                 xs += [pos[e["source"]][0], pos[e["target"]][0], None]; ys += [pos[e["source"]][1], pos[e["target"]][1], None]
         fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines", line=dict(color=COL["phys"], width=1, dash="dot"), hoverinfo="skip", name="physical contact"))
-    cmap = dict(seed=COL["seed"], receptor=COL["endpoint"], tf=COL["shared"], upstream=COL["causal"], downstream=COL["node"])
+    cmap = dict(seed=COL["seed"], receptor=COL["endpoint"], ligand=COL["ligand"], tf=COL["shared"], upstream=COL["causal"], downstream=COL["node"])
     hover = lambda n: f"<b>{n['id']}</b><br>{n['cls']} · {n['compartment']}<br>hops {n.get('hops', 0)} · score {n['score']:.2f}<br>{n.get('note', '')}"
-    for cls in ["seed", "receptor", "tf", "upstream", "downstream"]:
+    for cls in ["seed", "receptor", "ligand", "tf", "upstream", "downstream"]:
         _node_trace(fig, [n for n in nodes if n["cls"] == cls], pos, rad, lambda n, c=cls: cmap[c],
                     lambda n: "#999" if n.get("sign") == 0 else "#111", hover, cls, line_w=1, focus=fset_or_none, values=fvals)
-    fig.update_xaxes(range=[0, 100], scaleanchor="y"); fig.update_yaxes(range=[0, 100])
+    fig.update_xaxes(range=[-8, 108], scaleanchor="y"); fig.update_yaxes(range=[-2, 102])
     _edge_legend(fig, ("act", "inh", "amb", "phys"))
     if caption: add_caption(fig, "cell_map")
     return fig

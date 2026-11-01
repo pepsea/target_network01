@@ -60,7 +60,7 @@ def research_gene(gene, run_sl=None, **options):
         except SystemExit as e: sl_note = str(e); print(f"[sl] skipped: {e}")
     res = dict(
         gene=gene, run_dir=out, sl_note=sl_note, upstream_note=notes.get("upstream", ""), downstream_note=notes.get("downstream", ""),
-        upstream_nodes=_read(f"{out}/upstream/upstream_nodes.csv"), receptors=_read(f"{out}/upstream/receptors.csv"),
+        upstream_nodes=_read(f"{out}/upstream/upstream_nodes.csv"), receptors=_read(f"{out}/upstream/receptors.csv"), ligands=_read(f"{out}/upstream/ligands.csv"),
         downstream_nodes=_read(f"{out}/downstream/downstream_nodes.csv"), tfs=_read(f"{out}/downstream/transcription_factors.csv"),
         target_genes=_read(f"{out}/downstream/target_genes.csv"), sl=_read(f"{out}/sl/synthetic_lethality.csv"),
         views=dict(upstream_flow=f"{out}/upstream/flow.html", upstream_cell_map=f"{out}/upstream/cell_map.html",
@@ -84,7 +84,7 @@ def gene_table(r, focus=None, focus_only=False):
     focus_only=True returns only the focus genes.
     """
     up, dn = r["upstream_nodes"], r["downstream_nodes"]
-    cols = ["node", "hops", "score", "influence", "sign", "sign_confidence", "is_endpoint", "feedback", "coessentiality_r",
+    cols = ["node", "hops", "score", "influence", "sign", "sign_confidence", "is_endpoint", "endpoint_type", "feedback", "coessentiality_r",
             "physical_with_seed", "compartment", "degree", "best_path"]
     u = up[[c for c in cols if c in up.columns]].rename(columns={"hops": "hops_up", "score": "score_up", "influence": "influence_up",
             "sign": "sign_up", "sign_confidence": "conf_up", "is_endpoint": "is_receptor", "best_path": "best_path_up", "feedback": "feedback_up"})
@@ -102,7 +102,8 @@ def gene_table(r, focus=None, focus_only=False):
     t = t.fillna({c: "" for c in t.columns if t[c].dtype == object})
     t["direction"] = ["both" if (pd.notna(a) and pd.notna(b)) else "upstream" if pd.notna(a) else "downstream" for a, b in zip(t.get("hops_up"), t.get("hops_down"))]
     t["hops"] = t[["hops_up", "hops_down"]].min(axis=1).astype(int)
-    t["role"] = ["receptor" if rc is True else "TF" if tf is True else "intermediate" for rc, tf in zip(t.get("is_receptor"), t.get("is_tf"))]
+    et = t["endpoint_type"].fillna("") if "endpoint_type" in t.columns else pd.Series("", index=t.index)
+    t["role"] = ["ligand" if e == "ligand" else "receptor" if rc is True else "TF" if tf is True else "intermediate" for rc, tf, e in zip(t.get("is_receptor"), t.get("is_tf"), et)]
     t["influence_total"] = t[["influence_up", "influence_down"]].fillna(0).sum(axis=1).round(4)
     t["feedback"] = t.get("feedback_up", False).fillna(False).astype(bool) | t.get("feedback_down", False).fillna(False).astype(bool)
     tg = r.get("target_genes")
@@ -204,6 +205,9 @@ def summarize_gene(r, n=10):
     if len(r["receptors"]):
         lines.append(f"Upstream: {len(r['upstream_nodes'])} nodes, {len(r['receptors'])} receptors. Top: " +
                      ", ".join(f"{x.node}({x.hops}h,{'+' if x.sign==1 else '-' if x.sign==-1 else '±'})" for x in r["receptors"].head(n).itertuples()))
+    if len(r.get("ligands", [])):
+        lines.append(f"Ligands (one hop beyond the receptors): {len(r['ligands'])}. Top: " +
+                     ", ".join(f"{x.node}({x.hops}h,{'+' if x.sign==1 else '-' if x.sign==-1 else '±'})" for x in r["ligands"].head(n).itertuples()))
     if r.get("upstream_note"): lines.append("Upstream: not available — " + r["upstream_note"].splitlines()[0])
     if r.get("downstream_note"): lines.append("Downstream: not available — " + r["downstream_note"].splitlines()[0])
     if len(r["tfs"]):

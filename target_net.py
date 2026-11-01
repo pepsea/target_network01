@@ -34,7 +34,7 @@ def resolve_symbol(g):
     return g
 
 TPL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "targetnet", "templates")
-COMPARTMENTS = ["membrane", "cytosol", "lysosome", "mitochondrion", "ER_golgi", "nucleus"]
+COMPARTMENTS = ["extracellular", "membrane", "cytosol", "lysosome", "mitochondrion", "ER_golgi", "nucleus"]
 
 
 # ----------------------------------------------------------------------------- shared setup
@@ -117,7 +117,7 @@ def annotate(df, G, gene, args, und):
 def cell_map_payload(gene, df, G, comp, mode, und):
     nodes = [dict(id=gene, cls="seed", compartment=comp.get(gene, "cytosol"), score=1.0, sign=1, hops=0)]
     for r in df.itertuples():
-        cls = ("receptor" if mode == "upstream" else "tf") if r.is_endpoint else mode
+        cls = (("ligand" if getattr(r, "endpoint_type", "") == "ligand" else "receptor") if mode == "upstream" else "tf") if r.is_endpoint else mode
         nodes.append(dict(id=r.node, cls=cls, compartment=r.compartment, score=float(r.score), sign=int(r.sign), hops=int(r.hops),
                           note=f"best path: {r.best_path}"))
     keep = {n["id"] for n in nodes}
@@ -146,23 +146,24 @@ def _stop_if_empty(df, gene, direction, args, exclude=()):
 def run_upstream(args):
     gene = resolve_symbol(args.gene); out = os.path.join(run_dir(args, f"upstream_{gene}"), "upstream"); os.makedirs(out, exist_ok=True)
     G, und = build_signaling(args)
-    receptors = D.load_receptors(args.demo)
+    receptors = D.load_receptors(args.demo); ligands = D.load_ligands(args.demo) - receptors
     if D.CFG.get("walk", {}).get("seed_rescue", True): Wk.rescue_seed(G, gene, "up", D.REACTOME_DIRECTED, float(Cf.db(D.CFG, "reactome_fi", "weight") or 0.5))
-    df = Wk.signed_walk(G, gene, receptors, direction="up", max_depth=args.max_depth, min_score=args.min_score, hub_strength=args.hub_penalty)
+    df = Wk.signed_walk(G, gene, receptors | ligands, direction="up", max_depth=args.max_depth, min_score=args.min_score, hub_strength=args.hub_penalty, extend_to=ligands)
     _stop_if_empty(df, gene, "upstream", args)
     df, comp = annotate(df, G, gene, args, und)
+    df["endpoint_type"] = ["ligand" if n in ligands else "receptor" if n in receptors else "" for n in df.node]
     df.to_csv(os.path.join(out, "upstream_nodes.csv"), index=False)
-    rec = df[df.is_endpoint].sort_values("score", ascending=False)
-    rec.to_csv(os.path.join(out, "receptors.csv"), index=False)
+    rec = df[df.endpoint_type == "receptor"].sort_values("score", ascending=False); rec.to_csv(os.path.join(out, "receptors.csv"), index=False)
+    lig = df[df.endpoint_type == "ligand"].sort_values("score", ascending=False); lig.to_csv(os.path.join(out, "ligands.csv"), index=False)
     flow = dict(mode="upstream", seed=gene, endpoint_label="receptors", regulon="", genes=[],
-                subtitle=f"{len(df)} nodes, {len(rec)} receptors reached within {args.max_depth} hops (path score ≥ {args.min_score}). Drawn right-to-left: receptors on the left, {gene} on the right.",
-                nodes=[dict(id=r.node, hops=int(r.hops), score=float(r.score), sign=int(r.sign), is_endpoint=bool(r.is_endpoint), best_path=r.best_path, feedback=bool(r.feedback),
+                subtitle=f"{len(df)} nodes, {len(rec)} receptors and {len(lig)} ligands reached within {args.max_depth} hops (path score ≥ {args.min_score}). Drawn right-to-left: ligands and receptors on the left, {gene} on the right.",
+                nodes=[dict(id=r.node, hops=int(r.hops), score=float(r.score), sign=int(r.sign), is_endpoint=bool(r.is_endpoint), endpoint_type=r.endpoint_type, best_path=r.best_path, feedback=bool(r.feedback),
                             coess=r.coessentiality_r, compartment=r.compartment, cls="node") for r in df.itertuples()] +
                       [dict(id=gene, hops=0, score=1.0, sign=1, is_endpoint=False, best_path=gene, cls="seed")],
                 edges=_edges(G, set(df.node) | {gene}))
     write_html("flow.html", "/*__FLOW_JSON__*/", flow, os.path.join(out, "flow.html"), d3=getattr(args, "d3", False))
     write_html("cell_map.html", "/*__NETWORK_JSON__*/", cell_map_payload(gene, df, G, comp, "upstream", und), os.path.join(out, "cell_map.html"), d3=getattr(args, "d3", False))
-    print(f"\n[upstream] {len(df)} nodes, {len(rec)} receptors -> {out}/")
+    print(f"\n[upstream] {len(df)} nodes, {len(rec)} receptors, {len(lig)} ligands -> {out}/")
     return df
     print(rec.head(12)[["node", "hops", "score", "influence", "sign", "sign_confidence", "best_path"]].to_string(index=False))
 
@@ -306,6 +307,7 @@ def check_config(cfg):
       ("reactome_fi", "context layer (mode=context) / walk (mode=directed)", Cf.db(cfg, "reactome_fi"), f"mode={Cf.db(cfg,'reactome_fi','mode') or 'context'}", "download 2023 release"),
       ("uniprot", "receptors + compartments (bulk, offline)", Cf.db(cfg, "uniprot"), "", "per-gene UniProt API (slow)"),
       ("receptors", "optional override of the receptor list", Cf.db(cfg, "receptors"), "", "derived from uniprot"),
+      ("ligands", "optional override of the secreted-ligand list", Cf.db(cfg, "ligands"), "", "derived from uniprot"),
       ("compartments", "optional override of compartments", Cf.db(cfg, "compartments"), "", "derived from uniprot"),
       ("tf_list", "downstream endpoints (required for downstream/crosstalk)", Cf.db(cfg, "tf_list"), "", "download Lambert 2018"),
       ("regulon", "TF -> target genes", Cf.db(cfg, "regulon"), f"source={Cf.db(cfg,'regulon','source')}, conf={Cf.db(cfg,'regulon','conf')}, license={Cf.db(cfg,'regulon','license')}", "download via OmniPath"),

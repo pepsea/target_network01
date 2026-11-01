@@ -43,6 +43,8 @@ databases:
     # curl -o uniprot_human_reviewed.tsv "https://rest.uniprot.org/uniprotkb/stream?query=organism_id:9606+AND+reviewed:true&fields=accession,gene_primary,keyword,cc_subcellular_location&format=tsv"
   receptors:
     path: null                  # optional override: text file, one HGNC symbol per line (else derived from uniprot, else UniProt API)
+  ligands:
+    path: null                  # optional override of the secreted-ligand list (else derived from uniprot: Secreted + Cytokine/Growth factor/Hormone)
   compartments:
     path: null                  # optional override: tsv gene<TAB>compartment (membrane|cytosol|lysosome|mitochondrion|ER_golgi|nucleus)
   tf_list:

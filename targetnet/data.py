@@ -329,6 +329,27 @@ def load_uniprot_bulk():
 
 
 # ------------------------------------------------------------------ endpoint sets
+def load_ligands(demo=False):
+    """
+    Secreted signalling ligands: UniProt keywords Secreted (KW-0964) AND (Cytokine KW-0202 | Growth factor KW-0339 | Hormone KW-0372),
+    derived from the same bulk UniProt table as the receptors (no extra download). Override with databases.ligands.path
+    (one symbol per line). Ligands are upstream endpoints: the walk stops at them, one hop beyond the receptor
+    (e.g. GDF2 -> ACVRL1), so ligand-receptor interactions appear as their own layer.
+    """
+    if demo:
+        return {"EGF", "IGF1", "INS", "PDGFB", "CXCL12", "FGF2", "GDF2", "BMP10"}
+    loc = _cfgmod.db(CFG, "ligands")
+    if loc and os.path.exists(loc):
+        genes = {l.strip().upper() for l in open(loc) if l.strip() and not l.startswith("#")}
+        print(f"[ligands] {len(genes)} from {loc}"); return genes
+    up = load_uniprot_bulk()
+    if up is None:
+        print("[ligands] no bulk UniProt table -> ligand layer off (set databases.uniprot.path or databases.ligands.path)"); return set()
+    kw = up.keywords.fillna("")
+    m = kw.str.contains(r"\bSecreted\b", case=False) & kw.str.contains(r"\bCytokine\b|\bGrowth factor\b|\bHormone\b", case=False)
+    genes = set(up[m].gene); print(f"[ligands] {len(genes)} from bulk UniProt (Secreted + Cytokine/Growth factor/Hormone)"); return genes
+
+
 def load_receptors(demo=False):
     """Gene symbols with UniProt keyword Receptor (KW-0675) and cell-membrane location."""
     if demo:
@@ -451,7 +472,7 @@ def load_compartments(genes, demo=False):
     if loc and os.path.exists(loc):
         tab = pd.read_csv(loc, sep="\t", header=None, names=["gene", "compartment"], comment="#")
         m = dict(zip(tab.gene.str.upper(), tab.compartment)); return {g: m.get(g, "cytosol") for g in genes}
-    kw = [("plasma membrane", "membrane"), ("cell membrane", "membrane"), ("lysosome", "lysosome"),
+    kw = [("secreted", "extracellular"), ("extracellular", "extracellular"), ("plasma membrane", "membrane"), ("cell membrane", "membrane"), ("lysosome", "lysosome"),
           ("late endosome", "lysosome"), ("mitochondri", "mitochondrion"), ("endoplasmic reticulum", "ER_golgi"),
           ("golgi", "ER_golgi"), ("nucleus", "nucleus"), ("nucleolus", "nucleus"), ("cytoplasm", "cytosol"), ("cytosol", "cytosol")]
     def first_mentioned(txt):   # UniProt lists the primary location first -> take the earliest keyword hit
@@ -573,6 +594,7 @@ def bh_fdr(p):
 # ================================================================== DEMO DATA (curated AKT1 axis; offline smoke test)
 def _demo_signor():
     e = [  # upstream of AKT1 (RTK / GPCR / integrin inputs)
+        ("EGF", "EGFR", 1), ("IGF1", "IGF1R", 1), ("INS", "INSR", 1), ("PDGFB", "PDGFRB", 1), ("CXCL12", "CXCR4", 1), ("FGF2", "FGFR3", 1),
         ("EGFR", "PIK3CA", 1), ("ERBB2", "PIK3CA", 1), ("PDGFRB", "PIK3CA", 1), ("FGFR3", "FRS2", 1), ("FRS2", "GAB1", 1),
         ("GAB1", "PIK3CA", 1), ("INSR", "IRS1", 1), ("IGF1R", "IRS1", 1), ("IRS1", "PIK3CA", 1), ("CXCR4", "GNB1", 1),
         ("GNB1", "PIK3CG", 1), ("ITGB1", "PTK2", 1), ("PTK2", "PIK3CA", 1), ("PIK3CA", "PDPK1", 1), ("PIK3CG", "PDPK1", 1),
@@ -660,7 +682,8 @@ def _demo_compartments():
     er = ["SREBF1"]; mito = ["BAD", "BCL2L1"]
     mem += ["PLCG1", "GRB2", "SHC1", "SRC"]; nuc += ["STAT1", "STAT3", "HIF1A", "CDK4"]
     c = {g: "membrane" for g in mem}; c.update({g: "lysosome" for g in lys}); c.update({g: "nucleus" for g in nuc})
-    c.update({g: "ER_golgi" for g in er}); c.update({g: "mitochondrion" for g in mito}); return c
+    c.update({g: "ER_golgi" for g in er}); c.update({g: "mitochondrion" for g in mito})
+    c.update({g: "extracellular" for g in ["EGF", "IGF1", "INS", "PDGFB", "CXCL12", "FGF2", "GDF2", "BMP10"]}); return c
 
 def demo_depmap(gene, cand):
     """SIMULATED genetic layer for offline smoke tests (not real DepMap values)."""

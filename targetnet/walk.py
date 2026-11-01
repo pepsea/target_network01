@@ -50,11 +50,13 @@ def hub_penalty(G, max_deg=None, strength=0.5):
     return {n: 1.0 - strength * math.log1p(d) / math.log1p(m) for n, d in deg.items()}
 
 
-def signed_walk(G, seed, endpoints, direction="down", max_depth=6, min_score=0.15, hub_strength=0.25):
+def signed_walk(G, seed, endpoints, direction="down", max_depth=6, min_score=0.15, hub_strength=0.25, extend_to=None):
     """
     Returns DataFrame: node, hops, score, sign(+1/-1/0 mixed), ambiguous(bool), is_endpoint, best_path (list)
     direction 'down' follows edges src->dst; 'up' follows them backwards (src is the upstream regulator).
+    extend_to: nodes an endpoint may still step into (upstream: receptors -> their ligands); those are endpoints too, so the walk ends there.
     """
+    extend_to = extend_to or set()
     if seed not in G:
         raise SystemExit(f"{seed} not in the signaling graph")
     pen = hub_penalty(G, strength=hub_strength)
@@ -68,12 +70,14 @@ def signed_walk(G, seed, endpoints, direction="down", max_depth=6, min_score=0.1
         negs, hops, n, sgn = heapq.heappop(heap)
         score = -negs
         if best.get((n, sgn), (0,))[0] > score: continue
-        if n != seed and (n in endpoints or hops >= max_depth): continue   # do not expand past endpoints
+        if n != seed and hops >= max_depth: continue
+        at_end = n != seed and n in endpoints                               # do not expand past endpoints ...
         for m in nbrs(n):
             if m == seed: continue
+            if at_end and m not in extend_to: continue                      # ... except receptor -> ligand
             e = edge(n, m)
             ns = score * e["weight"] * pen.get(m, 1.0)
-            if ns < min_score: continue
+            if ns < min_score and not at_end: continue                        # the ligand step is annotation of a reached receptor: not score-gated
             eff = e["effect"]; amb = best[(n, sgn)][3] or eff == 0
             nsgn = sgn * (eff if eff != 0 else 1)
             key = (m, nsgn)

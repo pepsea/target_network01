@@ -32,7 +32,7 @@ Legend: **required** = the walk cannot run without it · *optional* = adds a lay
 - Columns used: `Gene1 Gene2 Annotation Direction Score`. Direction `->`/`<-` activation, `-|`/`|-` inhibition, `-` undirected (goes to the physical layer).
 - The `.txt` and the `.zip` are both accepted. Updated: about yearly.
 
-## 3. UniProt bulk table (recommended; replaces hundreds of API calls)
+## 3. UniProt bulk table (recommended; replaces hundreds of API calls) — also the source of the secreted-ligand list (keywords Secreted + Cytokine / Growth factor / Hormone)
 ```bash
 mkdir -p ~/Documents/database/uniprot
 curl -o ~/Documents/database/uniprot/uniprot_human_reviewed.tsv \
