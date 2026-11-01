@@ -1,0 +1,28 @@
+# target_net — project notes for Claude Code
+
+Network-based drug-target research around a core gene. Entry points: `target_net.py` (CLI), `targetnet/api.py` (notebook API),
+`notebooks/*.ipynb` (templates), `.claude/skills/target-network-research/SKILL.md` (the workflow skill — follow it for analysis requests).
+
+## Layout
+- `targetnet/config.py`  YAML config: database paths, download policy, walk/SL thresholds (`config.example.yaml` -> `target_net.yaml`)
+- `targetnet/data.py`    loaders (SIGNOR, Reactome FI, STRING, UniProt, Lambert TFs, DoRothEA/OmniPath, DepMap, HPA) + curated demo data
+- `targetnet/walk.py`    signed best-path walk over (node, sign) states; regulon extension; cross-talk logic
+- `targetnet/templates/` D3 views: flow.html, cell_map.html, crosstalk.html, sl_plot.html
+- `fetch_depmap.py`      DepMap downloader (portal API, Figshare fallback)
+
+## Conventions (owner's preferences)
+- Python; minimal first version, then extend. Notebook/py code: a comment or markdown cell above each block explaining it.
+- Commercial-use data only (no KEGG, no PhosphoSitePlus); state licences when adding a source.
+- Demo mode (`--demo`) must stay runnable offline; demo DepMap values are simulated and must be labelled as such.
+- Plots: flat, muted colours, white background, English labels.
+
+## Test
+`for m in "upstream --gene AKT1" "downstream --gene AKT1" "sl --gene AKT1" "crosstalk --causal FGFR3 --goi HSP90AA2"; do python target_net.py $m --demo; done`
+Notebooks: `jupyter nbconvert --to notebook --execute notebooks/gene_research.ipynb --output /tmp/t.ipynb`
+Expected textbook recovery: AKT1 upstream -> RTKs via PI3K/PDPK1; MAPK1 x AKT1 -> RSK->GSK3B S9, ERK-|SOS1 feedback.
+
+## Open items
+- Live-data validation (sandbox had no network): run `upstream --gene MAPK1` live, tune walk thresholds
+- Chaperone/client edge layer (Taipale 2012, Picard list) beyond SIGNOR
+- Cross-talk baseline: same target vs several unrelated core genes
+- Boolean/logic simulation of the signed graph

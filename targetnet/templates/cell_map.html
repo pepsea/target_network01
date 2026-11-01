@@ -1,0 +1,97 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Cell map - target neighborhood</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<style>
+ body{margin:0;background:#fff;font-family:Helvetica,Arial,sans-serif;color:#222}
+ #wrap{display:flex}
+ svg{background:#fff}
+ .comp{fill:none;stroke:#999;stroke-width:1.2}
+ .complabel{fill:#777;font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+ .edge{fill:none}
+ .lbl{font-size:10px;fill:#222;pointer-events:none}
+ #side{width:260px;padding:14px;font-size:12px;border-left:1px solid #ddd;height:100vh;overflow:auto}
+ .sw{display:inline-block;width:10px;height:10px;margin-right:6px;vertical-align:middle}
+ #info{margin-top:12px;white-space:pre-wrap;line-height:1.4}
+</style></head><body>
+<div id="wrap"><svg id="svg"></svg>
+<div id="side">
+ <b id="title"></b>
+ <div style="margin-top:10px" id="legend"></div>
+ <div style="margin-top:6px;font-size:11px">edges: arrow = activates, bar = inhibits, dotted = physical<br>node size = path score, grey ring = sign ambiguous/mixed</div>
+ <div id="info">click a node</div>
+</div></div>
+<script>
+const NET = /*__NETWORK_JSON__*/;
+const W = Math.max(700, window.innerWidth-280), H = Math.max(520, window.innerHeight);
+const svg = d3.select("#svg").attr("width",W).attr("height",H);
+const col = {seed:"#1f3a5f", upstream:"#4a7fb5", receptor:"#2d5f8f", downstream:"#8a8a8a", tf:"#6b5b95"};
+document.getElementById("title").textContent = (NET.mode||"") + " of " + NET.seed + " (location view)";
+const LEG = {seed:"seed", receptor:"receptor (endpoint)", upstream:"upstream node", downstream:"downstream node", tf:"transcription factor (endpoint)"};
+document.getElementById("legend").innerHTML = Object.entries(LEG).filter(([k])=>NET.nodes.some(n=>n.cls===k))
+  .map(([k,v])=>`<div><span class="sw" style="background:${col[k]}"></span>${v}</div>`).join("");
+
+// ---- schematic cell: concentric/zoned compartments (flat, 2D)
+const cx = W*0.46, cy = H*0.5, R = Math.min(W,H)*0.46;
+const zones = {
+  membrane:      {type:"ring", r0:R*0.93, r1:R},
+  cytosol:       {type:"ring", r0:R*0.30, r1:R*0.50},
+  nucleus:       {type:"circle", x:cx, y:cy, r:R*0.26},
+  lysosome:      {type:"circle", x:cx-R*0.66, y:cy+R*0.30, r:R*0.16},
+  mitochondrion: {type:"circle", x:cx+R*0.66, y:cy+R*0.30, r:R*0.16},
+  ER_golgi:      {type:"circle", x:cx+R*0.52, y:cy-R*0.60, r:R*0.16},
+};
+const g = svg.append("g");
+g.append("circle").attr("cx",cx).attr("cy",cy).attr("r",R).attr("class","comp").attr("stroke-width",2.5);
+g.append("circle").attr("cx",cx).attr("cy",cy).attr("r",R*0.93).attr("class","comp").attr("stroke-dasharray","3,3");
+for (const [k,z] of Object.entries(zones)) if (z.type==="circle") {
+  g.append("circle").attr("cx",z.x).attr("cy",z.y).attr("r",z.r).attr("class","comp");
+  g.append("text").attr("x",z.x).attr("y",z.y-z.r-4).attr("text-anchor","middle").attr("class","complabel").text(k.replace("_","/"));
+}
+g.append("text").attr("x",cx).attr("y",cy-R*0.93-6).attr("text-anchor","middle").attr("class","complabel").text("plasma membrane");
+g.append("text").attr("x",cx-R*0.08).attr("y",cy-R*0.40).attr("class","complabel").text("cytosol");
+
+// anchor = where a node of that compartment is pulled to
+function anchor(c, i, n){
+  const z = zones[c] || zones.cytosol;
+  if (z.type==="circle") return {x:z.x, y:z.y, r:z.r*0.8};
+  const a = (i/n)*2*Math.PI - Math.PI/2, rr = (z.r0+z.r1)/2;
+  return {x:cx+rr*Math.cos(a), y:cy+rr*Math.sin(a), r:(z.r1-z.r0)/2};
+}
+const byComp = d3.group(NET.nodes, d=>d.compartment);
+NET.nodes.forEach(d=>{ const arr=byComp.get(d.compartment); const i=arr.indexOf(d); d.anchor=anchor(d.compartment,i,arr.length); d.x=d.anchor.x; d.y=d.anchor.y; });
+const idx = new Map(NET.nodes.map(d=>[d.id,d]));
+const links = NET.edges.filter(e=>idx.has(e.source)&&idx.has(e.target));
+
+svg.append("defs").html(`
+ <marker id="arr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#555"/></marker>
+ <marker id="bar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M8,0L8,10" stroke="#555" stroke-width="2.5"/></marker>`);
+
+const link = g.append("g").selectAll("path").data(links).join("path").attr("class","edge")
+  .attr("stroke", d=>d.kind==="physical"?"#bbb":"#555").attr("stroke-width",1.2)
+  .attr("stroke-dasharray", d=>d.kind==="physical"?"2,3":null)
+  .attr("marker-end", d=>d.kind!=="signaling"?null:(d.effect===-1?"url(#bar)":"url(#arr)"));
+const rad = d=>d.cls==="seed"?12:5+10*(d.score||0.3);
+const node = g.append("g").selectAll("circle").data(NET.nodes).join("circle")
+  .attr("r",rad).attr("fill",d=>col[d.cls]||"#999")
+  .attr("stroke",d=>d.sign===0?"#999":"#111").attr("stroke-width", d=>d.sign===0?2.5:0.6)
+  .style("cursor","pointer").on("click",(e,d)=>{
+    document.getElementById("info").textContent =
+      `${d.id}\nclass: ${d.cls}\ncompartment: ${d.compartment}\nhops: ${d.hops??0}\npath score: ${d.score}\nnet sign from seed: ${d.sign===1?"activated":d.sign===-1?"inhibited":"mixed/ambiguous"}\n${d.note||""}`;
+  }).call(d3.drag().on("drag",(e,d)=>{d.fx=e.x;d.fy=e.y;sim.alpha(.3).restart()}).on("end",(e,d)=>{d.fx=null;d.fy=null}));
+const label = g.append("g").selectAll("text").data(NET.nodes).join("text").attr("class","lbl").text(d=>d.id);
+
+const sim = d3.forceSimulation(NET.nodes)
+  .force("x", d3.forceX(d=>d.anchor.x).strength(0.25))
+  .force("y", d3.forceY(d=>d.anchor.y).strength(0.25))
+  .force("collide", d3.forceCollide(d=>rad(d)+10))
+  .force("link", d3.forceLink(links).id(d=>d.id).distance(40).strength(0.08))
+  .on("tick", ()=>{
+    // keep each node inside its compartment zone
+    NET.nodes.forEach(d=>{ const dx=d.x-d.anchor.x, dy=d.y-d.anchor.y, dd=Math.hypot(dx,dy)||1, lim=d.anchor.r;
+      if (dd>lim){ d.x=d.anchor.x+dx/dd*lim; d.y=d.anchor.y+dy/dd*lim; } });
+    link.attr("d", d=>{ const s=d.source,t=d.target, dx=t.x-s.x, dy=t.y-s.y, dd=Math.hypot(dx,dy)||1, r=rad(t)+2;
+      return `M${s.x},${s.y}L${t.x-dx/dd*r},${t.y-dy/dd*r}`; });
+    node.attr("cx",d=>d.x).attr("cy",d=>d.y);
+    label.attr("x",d=>d.x+rad(d)+2).attr("y",d=>d.y+3);
+  });
+</script></body></html>

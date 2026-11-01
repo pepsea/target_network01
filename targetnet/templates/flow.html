@@ -1,0 +1,106 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Pathway flow</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<style>
+ body{margin:0;background:#fff;font-family:Helvetica,Arial,sans-serif;color:#222;font-size:12px}
+ #wrap{display:flex} svg{background:#fff}
+ #side{width:300px;padding:14px;border-left:1px solid #ddd;height:100vh;overflow:auto}
+ h3{margin:0 0 6px 0;font-size:14px} .muted{color:#777}
+ .lbl{font-size:10px;fill:#222;pointer-events:none}
+ .layer{fill:#888;font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+ .edge{fill:none;stroke-opacity:.7}
+ #info{margin-top:10px;white-space:pre-wrap;line-height:1.45}
+ .sw{display:inline-block;width:10px;height:10px;margin-right:6px;vertical-align:middle}
+ table{border-collapse:collapse;width:100%;margin-top:8px} td,th{padding:2px 4px;border-bottom:1px solid #eee;font-size:11px;text-align:left} th{color:#666;font-weight:normal}
+</style></head><body>
+<div id="wrap"><svg id="svg"></svg>
+<div id="side">
+ <h3 id="title"></h3><div class="muted" id="sub"></div>
+ <div style="margin-top:8px">
+  <div><span class="sw" style="background:#1f3a5f"></span>seed</div>
+  <div><span class="sw" style="background:#2d5f8f"></span>endpoint (receptor / TF)</div>
+  <div><span class="sw" style="background:#8a8a8a"></span>intermediate</div>
+  <div><span class="sw" style="background:#d9d9d9;border:1px solid #999"></span>target-gene summary box (click)</div>
+  <div style="margin-top:4px">node fill saturation = path score; edge: arrow = activates, bar = inhibits, grey = ambiguous</div>
+  <div>node outline: <b>green</b> = net activated by seed, <b>red</b> = net inhibited, grey dashed = mixed; long dashes = feedback node (also upstream of seed)</div>
+ </div>
+ <div id="info" class="muted">click a node</div>
+</div></div>
+<script>
+const F = /*__FLOW_JSON__*/;
+const W = Math.max(760, window.innerWidth-320), H = Math.max(520, window.innerHeight);
+const svg = d3.select("#svg").attr("width",W).attr("height",H);
+document.getElementById("title").textContent = `${F.mode} pathway of ${F.seed}`;
+document.getElementById("sub").textContent = F.subtitle || "";
+svg.append("defs").html(`
+ <marker id="arr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#555"/></marker>
+ <marker id="bar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M8,0L8,10" stroke="#555" stroke-width="2.5"/></marker>`);
+
+// ---- layers: column index = hops (upstream mode is drawn right-to-left so the seed is on the right)
+const nodes = F.nodes; const byId = new Map(nodes.map(d=>[d.id,d]));
+// layout column: intermediates by hop; all endpoints (receptors / TFs) in one dedicated final column
+const maxMid = d3.max(nodes.filter(d=>!d.is_endpoint), d=>d.hops) || 0;
+nodes.forEach(d=>{ d.col = d.is_endpoint ? maxMid+1 : d.hops; });
+const maxHop = maxMid+1;
+const padL = 70, padR = F.genes.length ? 230 : 70, padT = 50, padB = 30;
+const colX = d3.scalePoint().domain(d3.range(0, maxHop+1)).range([padL, W-padR]).padding(0.3);
+const layers = d3.group(nodes, d=>d.col);
+// order within a column by barycenter of neighbours in the previous column (simple Sugiyama pass)
+const pos = new Map();
+for (let h=0; h<=maxHop; h++){
+  const arr = (layers.get(h)||[]).slice();
+  if (h>0) arr.forEach(d=>{ const prev = F.edges.filter(e=>e.target===d.id && pos.has(e.source)).map(e=>pos.get(e.source).y);
+                             d._bc = prev.length ? d3.mean(prev) : H/2; });
+  arr.sort((a,b)=>(a._bc??0)-(b._bc??0) || b.score-a.score);
+  const ys = d3.scalePoint().domain(arr.map(d=>d.id)).range([padT+20, H-padB-20]).padding(0.5);
+  arr.forEach(d=>pos.set(d.id,{x: F.mode==="upstream" ? W-padR-(colX(h)-padL) : colX(h), y: ys(d.id)}));
+}
+nodes.forEach(d=>{ const p=pos.get(d.id); d.x=p.x; d.y=p.y; });
+// layer captions
+for (let h=0; h<=maxHop; h++){
+  const x = F.mode==="upstream" ? W-padR-(colX(h)-padL) : colX(h);
+  svg.append("text").attr("x",x).attr("y",padT-22).attr("text-anchor","middle").attr("class","layer")
+     .text(h===0?"seed":h===maxHop?(F.mode==="upstream"?"receptors":"TFs"):`hop ${h}`);
+}
+// ---- edges
+const edges = F.edges.filter(e=>byId.has(e.source)&&byId.has(e.target));
+svg.append("g").selectAll("path").data(edges).join("path").attr("class","edge")
+  .attr("stroke", e=>e.effect===0?"#bbb":"#555").attr("stroke-width", e=>0.8+1.4*(e.weight||0.7))
+  .attr("stroke-dasharray", e=>e.effect===0?"3,3":null)
+  .attr("marker-end", e=>e.effect===-1?"url(#bar)":"url(#arr)")
+  .attr("d", e=>{ const s=byId.get(e.source), t=byId.get(e.target); const r=rad(t)+2; const dx=t.x-s.x, dy=t.y-s.y, dd=Math.hypot(dx,dy)||1;
+     const tx=t.x-dx/dd*r, ty=t.y-dy/dd*r; const mx=(s.x+tx)/2; return `M${s.x},${s.y}C${mx},${s.y} ${mx},${ty} ${tx},${ty}`; });
+// ---- nodes
+function rad(d){ return d.cls==="seed"?12:5+9*(d.score||0.3); }
+const fill = d=> d.cls==="seed"?"#1f3a5f": d.is_endpoint ? d3.interpolateRgb("#cfdff0","#2d5f8f")(d.score) : d3.interpolateRgb("#e6e6e6","#6f6f6f")(d.score);
+const g = svg.append("g").selectAll("g").data(nodes).join("g").attr("transform",d=>`translate(${d.x},${d.y})`).style("cursor","pointer")
+  .on("click",(e,d)=>show(d));
+g.append("circle").attr("r",rad).attr("fill",fill)
+  .attr("stroke", d=>d.cls==="seed"?"#111":d.sign===1?"#2e7d32":d.sign===-1?"#b23b3b":"#888").attr("stroke-width",d=>d.cls==="seed"?1:2.2)
+  .attr("stroke-dasharray", d=>d.sign===0?"3,2":d.feedback?"6,3":null);
+g.append("text").attr("class","lbl").attr("x",d=>rad(d)+3).attr("y",3).text(d=>d.id);
+
+// ---- gene summary boxes next to each TF (downstream mode)
+if (F.genes.length){
+  const byTF = d3.group(F.genes, d=>d.tf);
+  const bx = W-padR+30;
+  svg.append("text").attr("x",bx+30).attr("y",padT-22).attr("class","layer").text("genes");
+  svg.append("text").attr("x",bx+30).attr("y",padT-9).attr("class","layer").style("text-transform","none").text(F.regulon);
+  for (const [tf, gs] of byTF){
+    const t = byId.get(tf); if(!t) continue;
+    const up = gs.filter(x=>x.sign===1).length, dn = gs.filter(x=>x.sign===-1).length, mx = gs.length-up-dn;
+    const bg = svg.append("g").attr("transform",`translate(${bx},${t.y-10})`).style("cursor","pointer")
+      .on("click",()=>{ document.getElementById("info").innerHTML =
+        `<b>${tf}</b> → ${gs.length} target genes<br><span class="muted">sign = net effect of ${F.seed} on the gene via ${tf}</span>` +
+        `<table><tr><th>gene</th><th>net</th><th>mode</th><th>conf</th><th>score</th></tr>` +
+        gs.slice(0,40).map(x=>`<tr><td>${x.gene}</td><td>${x.sign===1?"↑":x.sign===-1?"↓":"±"}</td><td>${x.mor===1?"act":"rep"}</td><td>${x.confidence}</td><td>${x.score}</td></tr>`).join("") + `</table>`; });
+    bg.append("rect").attr("width",180).attr("height",20).attr("fill","#f2f2f2").attr("stroke","#aaa").attr("rx",3);
+    bg.append("text").attr("x",6).attr("y",14).attr("font-size",10).text(`${gs.length} genes  ↑${up}  ↓${dn}${mx?"  ±"+mx:""}`);
+    svg.append("line").attr("x1",t.x+rad(t)).attr("y1",t.y).attr("x2",bx).attr("y2",t.y).attr("stroke","#ccc").attr("stroke-dasharray","2,3");
+  }
+}
+function show(d){ document.getElementById("info").textContent =
+  `${d.id}\nhops: ${d.hops}\npath score: ${d.score}\nnet sign from ${F.seed}: ${d.sign===1?"activated":d.sign===-1?"inhibited":"mixed / ambiguous"}` +
+  (d.is_endpoint?`\nendpoint: yes`:``) + (d.feedback?`\nfeedback: this node is also upstream of ${F.seed} (loop)`:``) + (d.coess!==undefined&&d.coess!==null&&d.coess!==""?`\nco-essentiality r: ${d.coess}`:``) +
+  (d.compartment?`\ncompartment: ${d.compartment}`:``) + `\nbest path:\n${d.best_path}`; }
+</script></body></html>

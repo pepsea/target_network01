@@ -1,0 +1,73 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Synthetic lethality</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<style>
+ body{margin:0;background:#fff;font-family:Helvetica,Arial,sans-serif;color:#222;font-size:12px}
+ #wrap{display:flex}
+ #side{width:330px;padding:14px;border-left:1px solid #ddd;height:100vh;overflow:auto}
+ h3{margin:0 0 6px 0;font-size:14px}
+ .axis text{font-size:11px;fill:#444}.axis path,.axis line{stroke:#999}
+ .lbl{font-size:10px;fill:#222}
+ table{border-collapse:collapse;width:100%;margin-top:8px}
+ th,td{text-align:left;padding:3px 4px;border-bottom:1px solid #eee;font-size:11px}
+ th{color:#666;font-weight:normal}
+ tr:hover{background:#f4f4f4;cursor:pointer}
+ .warn{color:#b36b3c;margin:6px 0}
+ .muted{color:#777}
+</style></head><body>
+<div id="wrap"><svg id="svg"></svg>
+<div id="side">
+ <h3 id="title"></h3>
+ <div class="muted" id="sub"></div>
+ <div class="warn" id="demo"></div>
+ <div style="margin-top:8px">
+  <div><span style="display:inline-block;width:9px;height:9px;background:#b36b3c;margin-right:6px"></span>synthetic-lethal hit (left of Δ threshold, above FDR line)</div>
+  <div><span style="display:inline-block;width:9px;height:9px;background:#4a7fb5;margin-right:6px"></span>already on the pathway network (not SL-class)</div>
+  <div><span style="display:inline-block;width:9px;height:9px;background:#ccc;margin-right:6px"></span>other genes</div>
+ </div>
+ <div id="info" class="muted" style="margin-top:8px;white-space:pre-wrap">click a point or row</div>
+ <table id="tbl"><thead><tr><th>#</th><th>gene</th><th>Δ effect</th><th>FDR</th><th>co-ess r</th></tr></thead><tbody></tbody></table>
+</div></div>
+<script>
+const SL = /*__SL_JSON__*/;
+const W = Math.max(640, window.innerWidth-350), H = Math.max(480, window.innerHeight);
+const m = {t:40, r:30, b:50, l:60};
+const svg = d3.select("#svg").attr("width",W).attr("height",H);
+document.getElementById("title").textContent = "Synthetic lethality with " + SL.seed + " loss";
+document.getElementById("sub").textContent =
+  `DepMap CRISPR (Chronos). x = mean gene-effect difference (${SL.seed}-lost − ${SL.seed}-intact; more negative = more essential when ${SL.seed} is lost). ` +
+  `y = −log10 FDR. n(${SL.seed}-lost lines) = ${SL.n_lost}. Thresholds: FDR < ${SL.thresholds.padj}, Δ < −${SL.thresholds.delta}.`;
+if (SL.demo) document.getElementById("demo").textContent = "DEMO: simulated values for layout testing only — not real DepMap data.";
+
+const pts = SL.points.filter(d=>isFinite(d.delta)&&d.padj>0);
+pts.forEach(d=>{ d.y = -Math.log10(Math.max(d.padj,1e-300)); });
+const x = d3.scaleLinear().domain(d3.extent(pts,d=>d.delta)).nice().range([m.l, W-m.r]);
+const y = d3.scaleLinear().domain([0, d3.max(pts,d=>d.y)*1.05]).nice().range([H-m.b, m.t]);
+svg.append("g").attr("class","axis").attr("transform",`translate(0,${H-m.b})`).call(d3.axisBottom(x));
+svg.append("g").attr("class","axis").attr("transform",`translate(${m.l},0)`).call(d3.axisLeft(y));
+svg.append("text").attr("x",(m.l+W-m.r)/2).attr("y",H-12).attr("text-anchor","middle").attr("fill","#444").text(`Δ gene effect (${SL.seed}-lost − intact)`);
+svg.append("text").attr("transform",`translate(16,${(m.t+H-m.b)/2}) rotate(-90)`).attr("text-anchor","middle").attr("fill","#444").text("−log10 FDR");
+// threshold guides
+const yth = y(-Math.log10(SL.thresholds.padj)), xth = x(-SL.thresholds.delta);
+svg.append("line").attr("x1",m.l).attr("x2",W-m.r).attr("y1",yth).attr("y2",yth).attr("stroke","#999").attr("stroke-dasharray","4,3");
+svg.append("line").attr("x1",xth).attr("x2",xth).attr("y1",m.t).attr("y2",H-m.b).attr("stroke","#999").attr("stroke-dasharray","4,3");
+svg.append("line").attr("x1",x(0)).attr("x2",x(0)).attr("y1",m.t).attr("y2",H-m.b).attr("stroke","#ddd");
+
+const col = d=> d.significant ? "#b36b3c" : d.on_pathway ? "#4a7fb5" : "#ccc";
+const g = svg.append("g");
+g.selectAll("circle").data(pts.sort((a,b)=>(a.significant||a.on_pathway)-(b.significant||b.on_pathway))).join("circle")
+  .attr("cx",d=>x(d.delta)).attr("cy",d=>y(d.y)).attr("r",d=>d.significant?4.5:d.on_pathway?3.5:2)
+  .attr("fill",col).attr("fill-opacity",d=>d.significant||d.on_pathway?0.95:0.55).attr("stroke",d=>d.significant?"#111":"none").attr("stroke-width",0.6)
+  .style("cursor","pointer").on("click",(e,d)=>show(d));
+// label top hits + pathway genes that pass
+const lab = pts.filter(d=>d.significant||(d.on_pathway&&d.y>-Math.log10(SL.thresholds.padj))).sort((a,b)=>a.delta-b.delta).slice(0,25);
+g.selectAll("text").data(lab).join("text").attr("class","lbl").attr("x",d=>x(d.delta)+6).attr("y",d=>y(d.y)-5).text(d=>d.gene);
+
+function show(d){ document.getElementById("info").textContent =
+  `${d.gene}\nΔ effect: ${(+d.delta).toFixed(3)}\nFDR: ${(+d.padj).toExponential(2)}\nco-essentiality with ${SL.seed}: ${d.coessentiality_r??"-"}\n` +
+  (d.on_pathway ? "on the pathway network (upstream/downstream of seed)" : d.significant ? "synthetic-lethal candidate (parallel to seed)" : ""); }
+const tb = d3.select("#tbl tbody");
+tb.selectAll("tr").data(SL.top).join("tr").on("click",(e,d)=>show(d)).html((d,i)=>
+  `<td>${i+1}</td><td><b>${d.gene}</b></td><td>${(+d.delta).toFixed(2)}</td><td>${(+d.padj).toExponential(1)}</td><td>${d.coessentiality_r??"-"}</td>`);
+if (!SL.top.length) tb.append("tr").append("td").attr("colspan",5).text("no gene passed the thresholds");
+</script></body></html>

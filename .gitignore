@@ -1,0 +1,9 @@
+cache/
+runs/
+out_*/
+__pycache__/
+.ipynb_checkpoints/
+*.pyc
+target_net.yaml
+.venv/
+data/

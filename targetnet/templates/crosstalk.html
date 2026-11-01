@@ -1,0 +1,97 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Cross-talk</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<style>
+ body{margin:0;background:#fff;font-family:Helvetica,Arial,sans-serif;color:#222;font-size:12px}
+ #wrap{display:flex} svg{background:#fff}
+ #side{width:340px;padding:14px;border-left:1px solid #ddd;height:100vh;overflow:auto}
+ h3{margin:0 0 6px 0;font-size:14px} .muted{color:#777}
+ .lbl{font-size:10px;fill:#222;pointer-events:none} .lane{fill:#888;font-size:12px;letter-spacing:.08em;text-transform:uppercase}
+ .edge{fill:none;stroke-opacity:.6} .xedge{fill:none;stroke-width:2}
+ #info{margin-top:10px;white-space:pre-wrap;line-height:1.45}
+ table{border-collapse:collapse;width:100%;margin-top:8px} td,th{padding:2px 4px;border-bottom:1px solid #eee;font-size:11px;text-align:left;vertical-align:top} th{color:#666;font-weight:normal}
+ .syn{color:#2e7d32} .ant{color:#b23b3b} .mix{color:#888}
+ .kpi{display:inline-block;margin:4px 10px 4px 0} .kpi b{font-size:16px}
+</style></head><body>
+<div id="wrap"><svg id="svg"></svg>
+<div id="side">
+ <h3 id="title"></h3>
+ <div id="kpi"></div>
+ <div class="muted" style="margin-top:6px">Left lane: downstream of the causal gene. Right lane: downstream of the gene of interest. Centre: shared nodes.
+ Thick coloured edges = <b>interference</b> (a node reachable only from the gene of interest acting on a node of the causal pathway):
+ <span class="syn">green</span> = same direction as the causal gene (synergistic), <span class="ant">red</span> = opposite (antagonistic), grey = undetermined; long-dashed = chaperone / protein-stability edge.</div>
+ <div id="info" class="muted">click a node or edge</div>
+ <h4 style="margin:12px 0 2px">Interference edges</h4><table id="tinter"></table>
+ <h4 style="margin:12px 0 2px">Shared endpoints (TFs / genes)</h4><table id="tend"></table>
+</div></div>
+<script>
+const X = /*__XT_JSON__*/;
+const W = Math.max(820, window.innerWidth-360), H = Math.max(560, window.innerHeight);
+const svg = d3.select("#svg").attr("width",W).attr("height",H);
+document.getElementById("title").textContent = `Cross-talk: does ${X.goi} influence the ${X.causal} pathway?`;
+const S = X.summary;
+document.getElementById("kpi").innerHTML =
+ `<div class="kpi"><b>${S.crosstalk_index}</b><br>cross-talk index<br><span class="muted">shared / causal endpoints</span></div>` +
+ `<div class="kpi"><b>${S.n_interference_edges}</b><br>interference edges</div>` +
+ `<div class="kpi"><b>${S.n_shared_nodes}</b><br>shared nodes</div>` +
+ `<div class="kpi"><b class="syn">${S.synergistic}</b> / <b class="ant">${S.antagonistic}</b> / <b class="mix">${S.mixed}</b><br>syn / ant / mixed endpoints</div>`;
+svg.append("defs").html(`
+ <marker id="arr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0L10,5L0,10z" fill="#555"/></marker>
+ <marker id="bar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M8,0L8,10" stroke="#555" stroke-width="2.5"/></marker>
+ <marker id="arrG" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0L10,5L0,10z" fill="#2e7d32"/></marker>
+ <marker id="barG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M8,0L8,10" stroke="#2e7d32" stroke-width="2.5"/></marker>
+ <marker id="arrR" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0L10,5L0,10z" fill="#b23b3b"/></marker>
+ <marker id="barR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M8,0L8,10" stroke="#b23b3b" stroke-width="2.5"/></marker>`);
+
+// lanes: causal-only (x ~ 0.22W), shared (0.5W), goi-only (0.78W); y by hops from the respective seed
+const nodes = X.nodes; const byId = new Map(nodes.map(d=>[d.id,d]));
+const laneX = {causal:0.20*W, shared:0.50*W, goi:0.80*W};
+const maxHop = d3.max(nodes, d=>Math.max(d.hops_c??0, d.hops_x??0)) || 1;
+const yScale = d3.scaleLinear().domain([0, maxHop+1]).range([60, H-40]);
+for (const [k, lab] of [["causal", X.causal+" pathway"], ["shared","shared"], ["goi", X.goi+" pathway"]])
+  svg.append("text").attr("x",laneX[k]).attr("y",28).attr("text-anchor","middle").attr("class","lane").text(lab);
+// row within lane: spread nodes with the same hop count
+const groups = d3.group(nodes, d=>d.lane+"|"+(d.lane==="goi"?d.hops_x:d.hops_c));
+for (const [k, arr] of groups){
+  arr.sort((a,b)=>b.score-a.score);
+  const lane = k.split("|")[0]; const span = lane==="shared" ? 0.22*W : 0.26*W;
+  const xs = d3.scalePoint().domain(arr.map(d=>d.id)).range([laneX[lane]-span/2, laneX[lane]+span/2]).padding(0.5);
+  arr.forEach((d,i)=>{ d.x = arr.length===1 ? laneX[lane] : xs(d.id); const hp = lane==="goi"?d.hops_x:d.hops_c; d.y = yScale(hp) + (i%2?10:-10); });
+}
+function rad(d){ return d.cls==="seed"?11:4.5+7*(d.score||0.3); }
+// ordinary pathway edges
+svg.append("g").selectAll("path").data(X.edges.filter(e=>byId.has(e.source)&&byId.has(e.target))).join("path").attr("class","edge")
+  .attr("stroke","#999").attr("stroke-width",1).attr("stroke-dasharray",e=>e.effect===0?"3,3":null)
+  .attr("marker-end",e=>e.effect===-1?"url(#bar)":"url(#arr)").attr("d",curve);
+// interference edges
+const xe = svg.append("g").selectAll("path").data(X.interference.filter(e=>byId.has(e.from_node)&&byId.has(e.to_node))).join("path").attr("class","xedge")
+  .attr("stroke",e=>e.agreement==="synergistic"?"#2e7d32":e.agreement==="antagonistic"?"#b23b3b":"#888")
+  .attr("marker-end",e=>{ const c=e.agreement==="synergistic"?"G":e.agreement==="antagonistic"?"R":""; return e.edge_effect===-1?`url(#bar${c})`:`url(#arr${c})`; })
+  .attr("stroke-dasharray",e=>(e.mechanism||"").includes("chaperone")?"7,4":null)
+  .attr("d",e=>curve({source:e.from_node,target:e.to_node})).style("cursor","pointer")
+  .on("click",(ev,e)=>{ document.getElementById("info").textContent =
+     `${e.from_node} → ${e.to_node}${e.residue?"  ("+e.residue+")":""}\nmechanism: ${e.mechanism||"-"}\nedge: ${e.edge_effect===1?"activates / stabilizes":e.edge_effect===-1?"inhibits / destabilizes":"ambiguous"}  [${e.db}]\n` +
+     `${X.goi} reaches ${e.from_node} in ${e.hops_goi_to_from} hop(s); ${X.causal} reaches ${e.to_node} in ${e.hops_causal_to_to} hop(s)\n` +
+     `net effect of ${X.goi} on ${e.to_node} via this edge: ${sgn(e.net_effect_of_goi_on_target)}\n` +
+     `effect of ${X.causal} on ${e.to_node}: ${sgn(e.causal_effect_on_target)}\n→ ${e.agreement}`; });
+function curve(e){ const s=byId.get(e.source), t=byId.get(e.target); const r=rad(t)+2; const dx=t.x-s.x, dy=t.y-s.y, dd=Math.hypot(dx,dy)||1;
+  const tx=t.x-dx/dd*r, ty=t.y-dy/dd*r; const mx=(s.x+tx)/2; return `M${s.x},${s.y}C${mx},${s.y} ${mx},${ty} ${tx},${ty}`; }
+function sgn(v){ return v===1?"activation":v===-1?"inhibition":"mixed"; }
+const fillc = d=> d.cls==="seed" ? "#1f3a5f" : d.lane==="shared" ? "#6b5b95" : d.lane==="causal" ? "#4a7fb5" : "#b36b3c";
+const g = svg.append("g").selectAll("g").data(nodes).join("g").attr("transform",d=>`translate(${d.x},${d.y})`).style("cursor","pointer")
+  .on("click",(e,d)=>{ document.getElementById("info").textContent =
+    `${d.id}\nlane: ${d.lane}` + (d.hops_c!=null?`\nhops from ${X.causal}: ${d.hops_c} (${sgn(d.sign_c)})`:"") + (d.hops_x!=null?`\nhops from ${X.goi}: ${d.hops_x} (${sgn(d.sign_x)})`:"") +
+    (d.is_endpoint?`\nendpoint (TF)`:"") + (d.agreement?`\nagreement: ${d.agreement}`:""); });
+g.append("circle").attr("r",rad).attr("fill",fillc).attr("fill-opacity",d=>0.45+0.55*(d.score||0.5)).attr("stroke",d=>d.is_endpoint?"#111":"none").attr("stroke-width",1.5);
+g.append("text").attr("class","lbl").attr("x",d=>rad(d)+3).attr("y",3).text(d=>d.id);
+
+// tables
+const ti = d3.select("#tinter"); ti.html("<tr><th>from (GOI side)</th><th>to (causal side)</th><th>site / mechanism</th><th>result</th></tr>");
+ti.selectAll("tr.r").data(X.interference).join("tr").attr("class","r").html(e=>
+  `<td>${e.from_node}</td><td>${e.to_node}</td><td>${e.residue||e.mechanism||"-"}</td><td class="${e.agreement==="synergistic"?"syn":e.agreement==="antagonistic"?"ant":"mix"}">${e.agreement}</td>`);
+if(!X.interference.length) ti.append("tr").append("td").attr("colspan",4).text("none found");
+const te = d3.select("#tend"); te.html(`<tr><th>endpoint</th><th>${X.causal}</th><th>${X.goi}</th><th>result</th></tr>`);
+te.selectAll("tr.r").data(X.endpoints).join("tr").attr("class","r").html(e=>
+  `<td>${e.name}${e.layer==="gene"?' <span class="muted">(gene via '+e.tf_from_causal+'/'+e.tf_from_goi+')</span>':''}</td><td>${e.sign_from_causal===1?"↑":e.sign_from_causal===-1?"↓":"±"}</td><td>${e.sign_from_goi===1?"↑":e.sign_from_goi===-1?"↓":"±"}</td><td class="${e.agreement==="synergistic"?"syn":e.agreement==="antagonistic"?"ant":"mix"}">${e.agreement}</td>`);
+if(!X.endpoints.length) te.append("tr").append("td").attr("colspan",4).text("no shared endpoints");
+</script></body></html>
