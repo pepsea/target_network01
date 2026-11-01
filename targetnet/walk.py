@@ -66,12 +66,14 @@ EMPTY_WALK = pd.DataFrame({"node": pd.Series(dtype=str), "hops": pd.Series(dtype
                            "ambiguous": pd.Series(dtype=bool), "is_endpoint": pd.Series(dtype=bool), "best_path": pd.Series(dtype=str)})
 
 
-def signed_walk(G, seed, endpoints, direction="down", max_depth=6, min_score=0.15, hub_strength=0.25, extend_to=None):
+def signed_walk(G, seed, endpoints, direction="down", max_depth=6, min_score=0.15, hub_strength=0.25, extend_to=None, stop_at_endpoints=True):
     """
     Returns DataFrame: node, hops, score, sign(+1/-1/0 mixed), ambiguous(bool), is_endpoint, best_path (list)
     direction 'down' follows edges src->dst; 'up' follows them backwards (src is the upstream regulator).
     All direct neighbours of the seed (hop 1) are always included, whatever their score; min_score gates expansion beyond them.
     extend_to: nodes an endpoint may still step into (upstream: receptors -> their ligands); those are endpoints too, so the walk ends there.
+    stop_at_endpoints=False: endpoints are still flagged (is_endpoint) but the walk continues through them (downstream: past TFs to the
+    transcriptional-regulation edges of the graph, e.g. SMAD1 -> ID1), governed by min_score / max_depth alone.
     """
     extend_to = extend_to or set()
     if seed not in G:
@@ -88,7 +90,7 @@ def signed_walk(G, seed, endpoints, direction="down", max_depth=6, min_score=0.1
         score = -negs
         if best.get((n, sgn), (0,))[0] > score: continue
         if n != seed and hops >= max_depth: continue
-        at_end = n != seed and n in endpoints                               # do not expand past endpoints ...
+        at_end = stop_at_endpoints and n != seed and n in endpoints         # do not expand past endpoints ...
         for m in nbrs(n):
             if m == seed: continue
             if at_end and m not in extend_to: continue                      # ... except receptor -> ligand

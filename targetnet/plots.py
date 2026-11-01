@@ -303,11 +303,17 @@ def flow_figure(json_path, width=1000, height=650, max_nodes=None, focus=None, c
     if capped: F["subtitle"] = f"showing the {max_nodes} highest-scoring of {len(F['nodes'])} nodes, per hop (full table in CSV). " + F.get("subtitle", "")
     F["genes"] = [g for g in F.get("genes", []) if g["tf"] in byid]
     # columns: intermediates by hop, endpoints in one final column; upstream mode is drawn right-to-left
-    max_mid = max([n["hops"] for n in nodes if not n.get("is_endpoint")] or [0])
     is_lig = lambda n: n.get("endpoint_type") == "ligand"
     has_lig = any(is_lig(n) for n in nodes)
-    for n in nodes: n["col"] = max_mid + 2 if is_lig(n) else max_mid + 1 if n.get("is_endpoint") else n["hops"]
-    ncol = max_mid + (3 if has_lig else 2)
+    through = bool(F.get("through_tf")) and F["mode"] == "downstream"
+    if through:      # TFs are not collected in a last column: the walk continued past them, so every node sits at its hop
+        max_mid = max([n["hops"] for n in nodes] or [0])
+        for n in nodes: n["col"] = n["hops"]
+        ncol = max_mid + 1
+    else:
+        max_mid = max([n["hops"] for n in nodes if not n.get("is_endpoint")] or [0])
+        for n in nodes: n["col"] = max_mid + 2 if is_lig(n) else max_mid + 1 if n.get("is_endpoint") else n["hops"]
+        ncol = max_mid + (3 if has_lig else 2)
     col_x = lambda c: (c + 0.5) / ncol * 100
     if F["mode"] == "upstream": col_x = lambda c, f=col_x: 100 - f(c)
     # a hop with many genes is wrapped into side-by-side sub-columns (at most ROWS genes each) instead of one very tall column
@@ -346,6 +352,7 @@ def flow_figure(json_path, width=1000, height=650, max_nodes=None, focus=None, c
                        + (f"<br>co-essentiality r {n['coess']}" if n.get("coess") not in (None, "") else "") + f"<br>{n.get('best_path', '')}")
     outline = lambda n: COL["syn"] if n["sign"] == 1 else COL["ant"] if n["sign"] == -1 else COL["mix"]
     fk = dict(focus=fset_or_none, values=fvals)
+    if through: F["subtitle"] = F.get("subtitle", "") + " TFs (blue, black outline) sit at their hop and the walk continues through them along transcriptional edges."
     _node_trace(fig, [n for n in nodes if n["cls"] == "seed"], pos, rad, lambda n: COL["seed"], lambda n: "#111", hover, "seed", **fk)
     imp = F.get("impact")
     if imp and focus is None:
@@ -388,15 +395,15 @@ def flow_figure(json_path, width=1000, height=650, max_nodes=None, focus=None, c
         for tf, gs in per.items():
             if tf not in pos: continue
             up = sum(g["sign"] == 1 for g in gs); dn = sum(g["sign"] == -1 for g in gs)
-            xs.append(pos[tf][0] + 13); ys.append(pos[tf][1]); txt.append(f"{len(gs)} genes ↑{up} ↓{dn}")
+            xs.append(pos[tf][0] + (0 if through else 13)); ys.append(pos[tf][1] - (2.2 if through else 0)); txt.append(f"{len(gs)} genes ↑{up} ↓{dn}")
             hv.append(f"<b>{tf} targets ({F.get('regulon', '')})</b><br>" + "<br>".join(f"{g['gene']} {'↑' if g['sign'] == 1 else '↓' if g['sign'] == -1 else '±'} ({g['confidence']})" for g in gs[:30]))
-        fig.add_trace(go.Scatter(x=xs, y=ys, mode="text", text=txt, textposition="middle right", textfont=dict(size=9, color="#444"),
+        fig.add_trace(go.Scatter(x=xs, y=ys, mode="text", text=txt, textposition="bottom center" if through else "middle right", textfont=dict(size=8 if through else 9, color="#555"),
                                  hovertext=hv, hoverinfo="text", name="target genes (hover)", showlegend=True))
     for c in range(ncol):
-        label = "seed" if c == 0 else ("ligands" if (has_lig and c == ncol - 1) else ("receptors" if F["mode"] == "upstream" else "TFs") if c == ncol - (2 if has_lig else 1) else f"hop {c}")
+        label = "seed" if c == 0 else (f"hop {c}" if through else ("ligands" if (has_lig and c == ncol - 1) else ("receptors" if F["mode"] == "upstream" else "TFs") if c == ncol - (2 if has_lig else 1) else f"hop {c}"))
         fig.add_annotation(x=col_x(c), y=99, text=label,
                            showarrow=False, font=dict(size=10, color="#888"))
-    fig.update_xaxes(range=[-2, 130 if F.get("genes") else 104]); fig.update_yaxes(range=[0, 102])
+    fig.update_xaxes(range=[-2, 130 if (F.get("genes") and not through) else 104]); fig.update_yaxes(range=[0, 102])
     _edge_legend(fig, ("act", "inh", "amb") + (("faded",) if focus is not None else ()))
     if caption: add_caption(fig, "impact" if (imp and focus is None) else "flow")
     return fig

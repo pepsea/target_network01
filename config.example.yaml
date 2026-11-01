@@ -79,6 +79,8 @@ walk:
   min_score: 0.35               # drop nodes whose best-path score (edge weights x hub penalty) is below this. Calibrated on SIGNOR+OmniPath (81k edges):
                                 # AKT1 upstream receptors at hub 0.25: 0.30 -> 203, 0.35 -> 110, 0.40 -> 42; at hub 0.40: 0.25 -> 82, 0.30 -> 38  (python target_net.py calibrate --gene AKT1)
   hub_penalty: 0.3              # 0 = none, 0.5 = strong down-weighting of highly connected nodes
+  through_tf: true              # downstream: keep walking past transcription factors along the graph's own transcriptional edges (SMAD1 -> ID1 ...);
+                                # TFs stay flagged as endpoints for tables / cross-talk statistics. false = stop at the first TF (DoRothEA layer only)
   seed_rescue: true             # seed with no edge in the walk direction (SIGNOR gap): add its own mechanistic Reactome FI edges so the walk can start
   seed_rescue_weight: 0.3       # low on purpose: a rescue edge onto a hub must not pull the hub's neighbourhood in (ACVRL1 -> PPP1CA case)
 

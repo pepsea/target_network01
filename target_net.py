@@ -218,7 +218,9 @@ def run_downstream(args, gene=None, quiet=False, exclude=(), G=None, und=None):
         G = G.copy(); G.remove_nodes_from([e for e in exclude if e in G])
     tfs = D.load_tfs(args.demo)
     Wk.prepare_seed(G, gene, "down", D.CFG, D.REACTOME_DIRECTED)
-    df = Wk.signed_walk(G, gene, tfs, direction="down", max_depth=args.max_depth, min_score=args.min_score, hub_strength=args.hub_penalty)
+    through_tf = bool(D.CFG.get("walk", {}).get("through_tf", True))
+    df = Wk.signed_walk(G, gene, tfs, direction="down", max_depth=args.max_depth, min_score=args.min_score, hub_strength=args.hub_penalty,
+                        stop_at_endpoints=not through_tf)
     _stop_if_empty(df, gene, "downstream", args, exclude)
     regulon = D.load_regulon(args.regulon, args.conf, args.regulon_file, args.demo)
     genes = Wk.extend_regulon(df, regulon, tfs, args.max_targets)
@@ -227,7 +229,7 @@ def run_downstream(args, gene=None, quiet=False, exclude=(), G=None, und=None):
     if not exclude: seed_partners(gene, G, und, df, out, quiet=quiet)
     tf_df = df[df.is_endpoint].sort_values("score", ascending=False); tf_df.to_csv(os.path.join(out, "transcription_factors.csv"), index=False)
     if len(genes): genes.to_csv(os.path.join(out, "target_genes.csv"), index=False)
-    flow = dict(mode="downstream", seed=gene, endpoint_label="transcription factors", regulon=f"{args.regulon} {args.conf}",
+    flow = dict(mode="downstream", seed=gene, endpoint_label="transcription factors", regulon=f"{args.regulon} {args.conf}", through_tf=through_tf,
                 subtitle=f"{len(df)} nodes, {len(tf_df)} TFs reached within {args.max_depth} hops; {genes.gene.nunique() if len(genes) else 0} target genes via {args.regulon} ({args.conf}).",
                 genes=json.loads(genes.to_json(orient="records")) if len(genes) else [],
                 nodes=[dict(id=r.node, hops=int(r.hops), score=float(r.score), sign=int(r.sign), is_endpoint=bool(r.is_endpoint), best_path=r.best_path, feedback=bool(r.feedback),

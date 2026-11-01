@@ -37,7 +37,8 @@ def _light_downstream(G, gene, tfs, regulon, max_depth, min_score, hub, exclude=
         H = G.copy(); H.remove_nodes_from([e for e in exclude if e in H])
     if gene not in H:
         return Wk.EMPTY_WALK.copy(), pd.DataFrame()
-    df = Wk.signed_walk(H, gene, tfs, direction="down", max_depth=max_depth, min_score=min_score, hub_strength=hub)
+    df = Wk.signed_walk(H, gene, tfs, direction="down", max_depth=max_depth, min_score=min_score, hub_strength=hub,
+                        stop_at_endpoints=not bool(D.CFG.get("walk", {}).get("through_tf", True)))
     genes = Wk.extend_regulon(df, regulon, tfs, max_targets) if len(df) and regulon is not None and len(regulon) else pd.DataFrame()
     return df, genes
 
