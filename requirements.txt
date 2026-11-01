@@ -5,4 +5,5 @@ networkx
 scipy
 pyyaml
 jupyter
+plotly
 nbconvert

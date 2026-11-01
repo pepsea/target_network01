@@ -50,8 +50,11 @@ def build_signaling(args):
 
 
 def write_html(tpl, token, payload, path):
+    """Write the standalone D3 view and, next to it, the same payload as JSON (used by targetnet.plots for Plotly figures)."""
     html = open(os.path.join(TPL, tpl)).read().replace(token, json.dumps(payload))
     open(path, "w").write(html)
+    with open(os.path.splitext(path)[0] + ".json", "w") as f:
+        json.dump(payload, f)
 
 
 def annotate(df, G, gene, args, und):

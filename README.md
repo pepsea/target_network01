@@ -73,6 +73,7 @@ Every node table carries: hops, path score, sign, ambiguous, best_path, feedback
 coessentiality_r, physical_with_seed (STRING / Reactome undirected), degree, compartment (UniProt).
 
 ## Views
+In notebooks use the Plotly versions (`targetnet.plots`, via `api.figure(view_path)`), rendered inline with plotly.js from the CDN so the .ipynb stays small; the D3 HTML files are the full standalone views (`api.show`).
 - `flow.html` — layered flow: seed → hops → endpoints column (+ gene summary boxes per TF in downstream mode; click to list genes).
   Outline colour = net sign from the seed (green activated, red inhibited, dashed mixed); long dashes = feedback node.
 - `cell_map.html` — same nodes placed by subcellular compartment (location view).

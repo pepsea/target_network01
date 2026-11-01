@@ -7,7 +7,8 @@ Network-based drug-target research around a core gene. Entry points: `target_net
 - `targetnet/config.py`  YAML config: database paths, download policy, walk/SL thresholds (`config.example.yaml` -> `target_net.yaml`)
 - `targetnet/data.py`    loaders (SIGNOR, Reactome FI, STRING, UniProt, Lambert TFs, DoRothEA/OmniPath, DepMap, HPA) + curated demo data
 - `targetnet/walk.py`    signed best-path walk over (node, sign) states; regulon extension; cross-talk logic
-- `targetnet/templates/` D3 views: flow.html, cell_map.html, crosstalk.html, sl_plot.html
+- `targetnet/templates/` D3 views: flow.html, cell_map.html, crosstalk.html, sl_plot.html (each view also written as .json)
+- `targetnet/plots.py`   Plotly versions of the four views for inline notebook use (read the .json next to each view)
 - `fetch_depmap.py`      DepMap downloader (portal API, Figshare fallback)
 
 ## Conventions (owner's preferences)

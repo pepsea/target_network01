@@ -5,7 +5,8 @@ Notebook-friendly API for target_net.
 
     r = research_gene("AKT1", config="target_net.yaml") # upstream + downstream (+ sl if depmap dir is configured)
     r["receptors"], r["tfs"], r["target_genes"], r["sl"] # pandas DataFrames
-    show(r["views"]["downstream_flow"])                 # render an HTML view inline (IFrame)
+    figure(r["views"]["downstream_flow"]).show()        # Plotly figure inline (small; plotly.js from CDN)
+    show(r["views"]["downstream_flow"])                 # or the full D3 view in an IFrame
 
     x = research_crosstalk(core="FGFR3", target="HSP90AA1", demo=True)
     x["summary"], x["interference"], x["endpoints"]
@@ -77,6 +78,18 @@ def research_crosstalk(core, target, workdir=None, **options):
     return dict(core=C, target=X, summary=summary, shared=_read(f"{out}/shared.csv"), interference=_read(f"{out}/interference.csv"),
                 endpoints=endpoints, views=dict(crosstalk=f"{out}/crosstalk.html", core_flow=f"out_{C}/downstream_without_{X}/flow.html",
                                                 target_flow=f"out_{X}/downstream_without_{C}/flow.html"))
+
+
+def figure(view_path, **kw):
+    """Plotly figure for a view: pass the .html or .json path from result['views'] (e.g. figure(r['views']['downstream_flow']))."""
+    from . import plots
+    jp = os.path.splitext(view_path)[0] + ".json"
+    if not os.path.exists(jp):
+        print(f"(no view at {jp})"); return None
+    kind = os.path.basename(jp)
+    fn = plots.flow_figure if kind.startswith("flow") else plots.cell_map_figure if kind.startswith("cell_map") else \
+         plots.crosstalk_figure if kind.startswith("crosstalk") else plots.volcano_figure
+    return fn(jp, **kw)
 
 
 def show(html_path, height=650):
