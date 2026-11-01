@@ -322,6 +322,31 @@ def check_config(cfg):
     print(f"walk          : {cfg['walk']}\ncrosstalk     : {cfg.get('crosstalk')}\nsl            : {cfg['sl']}")
 
 
+def signor_lookup(gene, cfg):
+    """Print every SIGNOR row that mentions a gene (as entity A, entity B, or inside a complex / family name),
+    so the user can see why a seed has or lacks edges in the walk graph (complexes and DIRECT=NO rows are not in it)."""
+    import io
+    loc = D._local("signor")
+    if not loc: raise SystemExit("signor-lookup needs a local SIGNOR file (databases.signor.path)")
+    df = pd.read_csv(io.StringIO(open(loc, encoding="utf-8", errors="replace").read()), sep="\t", dtype=str, quoting=3, on_bad_lines="skip")
+    df.columns = [c.upper().replace(" ", "") for c in df.columns]
+    g = gene.upper()
+    hit = df[df.ENTITYA.str.upper().str.contains(rf"\b{g}\b", na=False) | df.ENTITYB.str.upper().str.contains(rf"\b{g}\b", na=False)]
+    if "TAX_ID" in hit.columns: hit = hit[hit.TAX_ID.astype(str).str.strip().isin(["9606", "9606.0", "-1"])]
+    cols = [c for c in ["ENTITYA", "TYPEA", "EFFECT", "MECHANISM", "RESIDUE", "ENTITYB", "TYPEB", "DIRECT", "SCORE"] if c in hit.columns]
+    print(f"[SIGNOR] {len(hit)} human rows mention {g} ({loc})")
+    if not len(hit): return
+    print(hit[cols].to_string(index=False, max_colwidth=28))
+    isprot = lambda t: t.astype(str).str.lower().str.strip() == "protein"
+    asA = hit[hit.ENTITYA.str.upper() == g]; asB = hit[hit.ENTITYB.str.upper() == g]
+    direct = hit.DIRECT.astype(str).str.upper().isin(["YES", "TRUE", "T", "1"]) if "DIRECT" in hit.columns else pd.Series(True, index=hit.index)
+    print(f"\nin the walk graph (protein -> protein, DIRECT=YES): outgoing {int((isprot(asA.TYPEB) & direct[asA.index]).sum())}, incoming {int((isprot(asB.TYPEA) & direct[asB.index]).sum())}")
+    other = hit[(hit.ENTITYA.str.upper() != g) & (hit.ENTITYB.str.upper() != g)]
+    if len(other): print(f"rows where {g} appears only inside a complex / family name (dropped by the loader): {len(other)}  e.g. {sorted(set(other.ENTITYA) | set(other.ENTITYB))[:6]}")
+    nd = hit[~direct]; 
+    if len(nd): print(f"indirect (DIRECT=NO) rows: {len(nd)} (kept only with signor.indirect: weight|keep)")
+
+
 def _edges(G, keep):
     return [dict(source=a, target=b, effect=d["effect"], weight=d["weight"], residue=d["residue"], db=d["source"])
             for a, b, d in G.edges(data=True) if a in keep and b in keep]
@@ -352,6 +377,8 @@ def main():
     p = sub.add_parser("sl"); p.add_argument("--gene", required=True); common(p)
     p = sub.add_parser("check-config", help="show which file each database loader will use with the current YAML")
     p.add_argument("--config", default=None)
+    p = sub.add_parser("signor-lookup", help="show every SIGNOR row mentioning a gene (why does the seed have / lack edges?)")
+    p.add_argument("--gene", required=True); p.add_argument("--config", default=None)
     p = sub.add_parser("regulon-url", help="print (or --save FILE) the OmniPath URL for the configured regulon")
     p.add_argument("--save", default=None); p.add_argument("--config", default=None)
     p.add_argument("--source", default=None); p.add_argument("--conf", default=None); p.add_argument("--license", default=None)
@@ -361,6 +388,8 @@ def main():
     args._explicit_score = getattr(args, "min_score", None) is not None
     if args.mode == "check-config":
         cfg = Cf.load_config(args.config); D.set_config(cfg); check_config(cfg); return
+    if args.mode == "signor-lookup":
+        cfg = Cf.load_config(args.config); D.set_config(cfg); signor_lookup(args.gene, cfg); return
     if args.mode == "regulon-url":
         cfg = Cf.load_config(args.config)
         url = D.omnipath_regulon_url(args.source or Cf.db(cfg, "regulon", "source") or "dorothea", args.conf or Cf.db(cfg, "regulon", "conf") or "ABC",

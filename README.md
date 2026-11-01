@@ -38,7 +38,7 @@ placing the files under the paths above is what makes strict offline mode (`allo
 Copy `config.example.yaml` to `target_net.yaml` (project root) or `~/.target_net.yaml` and set the local paths of each
 database; anything left `null` is downloaded into `cache_dir` when `allow_download: true`. `--config FILE` / `config=` overrides.
 `allow_download: false` makes runs strictly offline and reports the exact YAML key that is missing.
-`python target_net.py check-config` shows, per database, which file will actually be used (ok / MISSING / not set, size, options, fallback) and the DepMap files it resolves.
+`python target_net.py signor-lookup --gene X` lists every SIGNOR row mentioning X (as protein, inside a complex, direct/indirect) — use it when a seed reaches 0 nodes. `python target_net.py check-config` shows, per database, which file will actually be used (ok / MISSING / not set, size, options, fallback) and the DepMap files it resolves.
 
 ## Claude Code skill
 `.claude/skills/target-network-research/SKILL.md` — Claude Code picks it up automatically when this folder is the project

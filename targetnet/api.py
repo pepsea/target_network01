@@ -48,14 +48,18 @@ def research_gene(gene, run_sl=None, **options):
     a = _args(**options); cli.apply_config(a); gene = cli.resolve_symbol(gene)
     a.gene = gene
     out = cli.run_dir(a, f"gene_{gene}")       # one timestamped folder for all three analyses
-    cli.run_upstream(a); cli.run_downstream(a)
+    notes = {}
+    for name, fn in (("upstream", cli.run_upstream), ("downstream", cli.run_downstream)):
+        try: fn(a)
+        except SystemExit as e:          # e.g. the walk reached nothing: keep the other analyses, record the reason
+            notes[name] = str(e); print(f"[{name}] skipped: {str(e).splitlines()[0]}")
     if run_sl is None: run_sl = bool(a.demo or a.depmap)
     sl_note = ""
     if run_sl:
         try: cli.run_sl(a)
         except SystemExit as e: sl_note = str(e); print(f"[sl] skipped: {e}")
     res = dict(
-        gene=gene, run_dir=out, sl_note=sl_note,
+        gene=gene, run_dir=out, sl_note=sl_note, upstream_note=notes.get("upstream", ""), downstream_note=notes.get("downstream", ""),
         upstream_nodes=_read(f"{out}/upstream/upstream_nodes.csv"), receptors=_read(f"{out}/upstream/receptors.csv"),
         downstream_nodes=_read(f"{out}/downstream/downstream_nodes.csv"), tfs=_read(f"{out}/downstream/transcription_factors.csv"),
         target_genes=_read(f"{out}/downstream/target_genes.csv"), sl=_read(f"{out}/sl/synthetic_lethality.csv"),
@@ -86,11 +90,15 @@ def gene_table(r, focus=None, focus_only=False):
             "sign": "sign_up", "sign_confidence": "conf_up", "is_endpoint": "is_receptor", "best_path": "best_path_up", "feedback": "feedback_up"})
     d = dn[[c for c in cols if c in dn.columns]].rename(columns={"hops": "hops_down", "score": "score_down", "influence": "influence_down",
             "sign": "sign_down", "sign_confidence": "conf_down", "is_endpoint": "is_tf", "best_path": "best_path_down", "feedback": "feedback_down"})
+    if "node" not in u.columns: u = pd.DataFrame({"node": pd.Series(dtype=str), "hops_up": pd.Series(dtype=float)})
+    if "node" not in d.columns: d = pd.DataFrame({"node": pd.Series(dtype=str), "hops_down": pd.Series(dtype=float)})
     shared = ["coessentiality_r", "physical_with_seed", "compartment", "degree"]
     t = u.merge(d.drop(columns=[c for c in shared if c in d.columns]), on="node", how="outer")
     for c in shared:                                   # fill annotation columns from whichever side has them
         if c not in t.columns and c in d.columns:
             t = t.merge(d[["node", c]], on="node", how="left")
+    for c in ("hops_up", "hops_down", "influence_up", "influence_down", "is_receptor", "is_tf", "feedback_up", "feedback_down"):
+        if c not in t.columns: t[c] = float("nan")
     t = t.fillna({c: "" for c in t.columns if t[c].dtype == object})
     t["direction"] = ["both" if (pd.notna(a) and pd.notna(b)) else "upstream" if pd.notna(a) else "downstream" for a, b in zip(t.get("hops_up"), t.get("hops_down"))]
     t["hops"] = t[["hops_up", "hops_down"]].min(axis=1).astype(int)
@@ -196,6 +204,8 @@ def summarize_gene(r, n=10):
     if len(r["receptors"]):
         lines.append(f"Upstream: {len(r['upstream_nodes'])} nodes, {len(r['receptors'])} receptors. Top: " +
                      ", ".join(f"{x.node}({x.hops}h,{'+' if x.sign==1 else '-' if x.sign==-1 else '±'})" for x in r["receptors"].head(n).itertuples()))
+    if r.get("upstream_note"): lines.append("Upstream: not available — " + r["upstream_note"].splitlines()[0])
+    if r.get("downstream_note"): lines.append("Downstream: not available — " + r["downstream_note"].splitlines()[0])
     if len(r["tfs"]):
         lines.append(f"Downstream: {len(r['downstream_nodes'])} nodes, {len(r['tfs'])} TFs, {r['target_genes'].gene.nunique() if len(r['target_genes']) else 0} target genes. Top TFs: " +
                      ", ".join(f"{x.node}({'↑' if x.sign==1 else '↓' if x.sign==-1 else '±'})" for x in r["tfs"].head(n).itertuples()))
