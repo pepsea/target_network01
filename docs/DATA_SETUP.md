@@ -13,7 +13,7 @@ Legend: **required** = the walk cannot run without it · *optional* = adds a lay
 | 3 | UniProt (bulk) | receptors + compartments | `uniprot.path` | `uniprot_human_reviewed.tsv` | ~30 MB | CC-BY 4.0 |
 | 4 | Lambert TF list | TF endpoints (**required** for downstream) | `tf_list.path` | `DatabaseExtract_v_1.01.csv` | 2 MB | CC-BY |
 | 5 | DoRothEA (OmniPath) | TF → target genes | `regulon.path` | `dorothea_ABC_commercial.tsv` | ~5 MB | per-record (filtered to commercial) |
-| 6 | DepMap | co-essentiality, synthetic lethality | `depmap.dir` | `CRISPRGeneEffect.csv`, `OmicsSomaticMutations.csv`, (`OmicsExpressionProteinCodingGenesTPMLogp1.csv`) | 1 GB + 0.5 GB (+ 0.5 GB) | CC-BY 4.0 |
+| 6 | DepMap | co-essentiality, synthetic lethality | `depmap.dir` | `CRISPRGeneEffect.csv`, `OmicsSomaticMutations.csv`, (`OmicsExpressionProteinCodingGenesTPMLogp1.csv` (newer releases: `OmicsExpressionTPMLogp1HumanProteinCodingGenes.csv`)) | 1 GB + 0.5 GB (+ 0.5 GB) | CC-BY 4.0 |
 | 7 | HPA tissue | `--tissue` expression filter | `hpa_tissue.path` | `rna_tissue_consensus.tsv[.zip]` | ~50 MB | CC BY-SA 3.0 |
 | 8 | STRING | physical-contact annotation | — (API) | — | — | CC-BY 4.0 |
 
@@ -59,7 +59,7 @@ python target_net.py regulon-url --save ~/Documents/database/dorothea/dorothea_A
 python fetch_depmap.py --out ~/Documents/database/depmap --list   # shows release and URLs
 python fetch_depmap.py --out ~/Documents/database/depmap          # downloads the three files
 ```
-- Manual: https://depmap.org/portal/data_page → **All Downloads** → latest `DepMap Public YYQN` → `CRISPRGeneEffect.csv`, `OmicsSomaticMutations.csv`, `OmicsExpressionProteinCodingGenesTPMLogp1.csv`. Mirrored on Figshare.
+- Manual: https://depmap.org/portal/data_page → **All Downloads** → latest `DepMap Public YYQN` → `CRISPRGeneEffect.csv`, `OmicsSomaticMutations.csv`, `OmicsExpressionProteinCodingGenesTPMLogp1.csv` (newer releases: `OmicsExpressionTPMLogp1HumanProteinCodingGenes.csv`). Mirrored on Figshare.
 - `CRISPRGeneEffect.csv` alone → co-essentiality. Synthetic lethality needs `OmicsSomaticMutations.csv` (mutation route) or the expression file (fallback: lowest-quartile expression = "lost").
 - Updated: quarterly (YYQ1…Q4). Keep the release name in a `README` inside the folder.
 

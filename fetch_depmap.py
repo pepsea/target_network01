@@ -13,7 +13,7 @@ Files (CC-BY 4.0): CRISPRGeneEffect.csv, OmicsSomaticMutations.csv, OmicsExpress
 import argparse, os, re, sys, json
 import requests
 
-WANTED = ["CRISPRGeneEffect.csv", "OmicsSomaticMutations.csv", "OmicsExpressionProteinCodingGenesTPMLogp1.csv"]
+WANTED = ["CRISPRGeneEffect.csv", "OmicsSomaticMutations.csv", "OmicsExpressionProteinCodingGenesTPMLogp1.csv", "OmicsExpressionTPMLogp1HumanProteinCodingGenes.csv"]
 HEADERS = {"User-Agent": "target-neighborhood-pipeline/0.1"}
 PORTAL_API = "https://depmap.org/portal/download/api/downloads"
 FIGSHARE_SEARCH = "https://api.figshare.com/v2/articles/search"

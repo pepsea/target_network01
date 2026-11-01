@@ -447,6 +447,18 @@ def load_compartments(genes, demo=False):
 
 # ------------------------------------------------------------------ DepMap
 _DEPMAP = {}
+import glob as _glob
+
+def depmap_file(depmap_dir, kind):
+    """Resolve a DepMap file across release naming variants. kind: 'effect' | 'mutations' | 'expression'."""
+    pats = {"effect": ["CRISPRGeneEffect.csv"],
+            "mutations": ["OmicsSomaticMutations.csv"],
+            "expression": ["OmicsExpressionProteinCodingGenesTPMLogp1.csv", "OmicsExpressionTPMLogp1HumanProteinCodingGenes.csv",
+                           "OmicsExpression*ProteinCoding*.csv"]}
+    for pat in pats[kind]:
+        hits = sorted(_glob.glob(os.path.join(depmap_dir, pat)))
+        if hits: return hits[0]
+    return None
 SL_NOTE = {"text": ""}     # why the synthetic-lethality test was (not) run; shown by api/notebook
 
 def _sl_note(msg):
@@ -459,8 +471,8 @@ def load_depmap(depmap_dir, gene, candidates, min_lost=None, padj_th=None, delta
     slc = CFG.get("sl", {}); min_lost = min_lost or slc.get("min_lost", 20); padj_th = padj_th or slc.get("padj", 0.05); delta_th = delta_th or slc.get("delta", 0.15)
     if not depmap_dir:
         _sl_note("[DepMap] no DepMap directory configured (databases.depmap.dir) -> no co-essentiality, no SL test"); return empty
-    ge_path = os.path.join(depmap_dir, "CRISPRGeneEffect.csv")
-    if not os.path.exists(ge_path):
+    ge_path = depmap_file(depmap_dir, "effect")
+    if not ge_path:
         _sl_note(f"[DepMap] CRISPRGeneEffect.csv not found in {depmap_dir} -> no co-essentiality, no SL test"); return empty
     if _DEPMAP.get("path") == ge_path:
         ge = _DEPMAP["ge"]
@@ -475,25 +487,32 @@ def load_depmap(depmap_dir, gene, candidates, min_lost=None, padj_th=None, delta
     corr = ge[cols].corrwith(a) if cols else pd.Series(dtype=float)
     coess = {g: float(r) for g, r in corr.items() if not np.isnan(r)}
     lost = set()
-    mut_path = os.path.join(depmap_dir, "OmicsSomaticMutations.csv")
-    if os.path.exists(mut_path):
+    mut_path = depmap_file(depmap_dir, "mutations")
+    if mut_path:
         mut = pd.read_csv(mut_path, usecols=lambda c: c in ("ModelID", "HugoSymbol", "LikelyLoF"), low_memory=False)
         m = mut[mut.HugoSymbol.str.upper() == gene]
         if "LikelyLoF" in m: m = m[m.LikelyLoF.astype(str).str.lower().isin(["true", "1"])]
         lost = set(m.ModelID) & set(ge.index); print(f"[DepMap] {len(lost)} likely-LoF lines for {gene}")
+    lost_def = f"likely-LoF mutation ({len(lost)} lines)"
     if len(lost) < min_lost:
-        ex_path = os.path.join(depmap_dir, "OmicsExpressionProteinCodingGenesTPMLogp1.csv")
-        if os.path.exists(ex_path):
-            ex = pd.read_csv(ex_path, index_col=0); ex.columns = [c.split(" (")[0].upper() for c in ex.columns]
-            common = ex.index.intersection(ge.index); q = ex.loc[common, gene].quantile(0.25)
-            lost = set(ex.loc[common][ex.loc[common, gene] <= q].index)
-            print(f"[DepMap] fallback: lowest-quartile {gene} expression = 'lost' ({len(lost)} lines)")
+        ex_path = depmap_file(depmap_dir, "expression")
+        if ex_path:
+            if _DEPMAP.get("ex_path") == ex_path: ex = _DEPMAP["ex"]
+            else:
+                print(f"[DepMap] loading expression (once per session): {os.path.basename(ex_path)}")
+                ex = pd.read_csv(ex_path, index_col=0); ex.columns = [c.split(" (")[0].upper() for c in ex.columns]
+                _DEPMAP.update(ex_path=ex_path, ex=ex)
+            if gene in ex.columns:
+                common = ex.index.intersection(ge.index); q = ex.loc[common, gene].quantile(0.25)
+                lost = set(ex.loc[common][ex.loc[common, gene] <= q].index)
+                lost_def = f"lowest-quartile {gene} expression ({len(lost)} lines) -- weaker definition than loss-of-function mutation"
+                print(f"[DepMap] fallback: {lost_def}")
     if len(lost) < min_lost:
-        ex_missing = not os.path.exists(os.path.join(depmap_dir, "OmicsExpressionProteinCodingGenesTPMLogp1.csv"))
+        ex_missing = depmap_file(depmap_dir, "expression") is None
         _sl_note(f"[DepMap] SL test skipped: only {len(lost)} cell lines with likely loss of {gene} (minimum {min_lost}). "
                  + ("Expected for an essential gene / oncogene; SL is informative for genes that tumours actually lose (PTEN, TSC2, STK11, BRCA1...). "
                     if not ex_missing else
-                    "No OmicsExpressionProteinCodingGenesTPMLogp1.csv for the low-expression fallback; for an oncogene like this the test is not meaningful anyway. ")
+                    "No DepMap expression file for the low-expression fallback; for an oncogene like this the test is not meaningful anyway. ")
                  + "Co-essentiality was still computed.")
         return coess, pd.DataFrame()
     from scipy import stats
@@ -507,6 +526,7 @@ def load_depmap(depmap_dir, gene, candidates, min_lost=None, padj_th=None, delta
     dfree = (vx / nx_ + vy / ny_) ** 2 / ((vx / nx_) ** 2 / (nx_ - 1) + (vy / ny_) ** 2 / (ny_ - 1))
     pvals = 2 * stats.t.sf(np.abs(t), dfree)
     full = pd.DataFrame({"gene": ge.columns, "delta": (mx - my).values, "p": pvals, "n_lost": nx_.values})[ok.values].reset_index(drop=True)
+    full["lost_definition"] = lost_def
     full["padj"] = bh_fdr(full.p.values)
     full["significant"] = (full.padj < padj_th) & (full.delta < -delta_th)
     print(f"[DepMap] {int(full.significant.sum())} SL candidates")
