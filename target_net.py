@@ -114,6 +114,37 @@ def annotate(df, G, gene, args, und):
     return df, comp
 
 
+def seed_partners(gene, G, und, df, out, receptors=None, ligands=None, quiet=False):
+    """
+    Physical / complex partners of the seed that the walk does NOT follow (undirected Reactome FI / STRING context edges),
+    e.g. ACVRL1 - BMPR2 / ACVR2A / ENG / TGFBR2. For each partner: is it already in the walk, where does it sit, and what signed
+    output does it have in the graph. Written to partners.csv as a hypothesis table (complex-mediated routes to check by hand or
+    to encode in custom_edges); nothing is added to the walk automatically, because a partner's output is not the seed's output
+    (a type II receptor phosphorylates the type I receptor, which then signals; borrowing TGFBR2's SMAD2/3 output for ACVRL1 would be wrong).
+    """
+    if not len(und): return pd.DataFrame()
+    ps = set(und.b[und.a == gene]) | set(und.a[und.b == gene]); ps.discard(gene)
+    if not ps: return pd.DataFrame()
+    inwalk = set(df.node); receptors = receptors or set(); ligands = ligands or set()
+    comp = D.load_compartments(ps | {gene})
+    rows = []
+    for p in sorted(ps):
+        outs = [(v, d["effect"]) for _, v, d in G.out_edges(p, data=True)] if p in G else []
+        ins = [(u, d["effect"]) for u, _, d in G.in_edges(p, data=True)] if p in G else []
+        rows.append(dict(partner=p, in_walk=p in inwalk, role="receptor" if p in receptors else "ligand" if p in ligands else "",
+                         compartment=comp.get(p, ""), direct_edge_with_seed=G.has_edge(p, gene) or G.has_edge(gene, p),
+                         n_signed_out=len(outs), n_signed_in=len(ins),
+                         top_outputs=", ".join(f"{v}{'+' if e == 1 else '-' if e == -1 else '?'}" for v, e in sorted(outs, key=lambda t: -G[p][t[0]]['weight'])[:6])))
+    tab = pd.DataFrame(rows).sort_values(["in_walk", "n_signed_out"], ascending=[False, False])
+    tab.to_csv(os.path.join(out, "partners.csv"), index=False)
+    if not quiet:
+        mem = tab[(tab.compartment == "membrane") | (tab.role != "")]
+        print(f"[partners] {len(tab)} physical/complex partners of {gene} in the context layer ({int(tab.in_walk.sum())} already in the walk); "
+              f"{len(mem)} at the membrane -> partners.csv (complex-mediated routes are NOT walked; see top_outputs)")
+        if len(mem): print(mem.head(8)[["partner", "in_walk", "role", "n_signed_out", "top_outputs"]].to_string(index=False))
+    return tab
+
+
 def cell_map_payload(gene, df, G, comp, mode, und):
     nodes = [dict(id=gene, cls="seed", compartment=comp.get(gene, "cytosol"), score=1.0, sign=1, hops=0)]
     for r in df.itertuples():
@@ -155,6 +186,7 @@ def run_upstream(args):
     df.to_csv(os.path.join(out, "upstream_nodes.csv"), index=False)
     rec = df[df.endpoint_type == "receptor"].sort_values("score", ascending=False); rec.to_csv(os.path.join(out, "receptors.csv"), index=False)
     lig = df[df.endpoint_type == "ligand"].sort_values("score", ascending=False); lig.to_csv(os.path.join(out, "ligands.csv"), index=False)
+    seed_partners(gene, G, und, df, out, receptors, ligands)
     flow = dict(mode="upstream", seed=gene, endpoint_label="receptors", regulon="", genes=[],
                 subtitle=f"{len(df)} nodes, {len(rec)} receptors and {len(lig)} ligands reached within {args.max_depth} hops (path score ≥ {args.min_score}). Drawn right-to-left: ligands and receptors on the left, {gene} on the right.",
                 nodes=[dict(id=r.node, hops=int(r.hops), score=float(r.score), sign=int(r.sign), is_endpoint=bool(r.is_endpoint), endpoint_type=r.endpoint_type, best_path=r.best_path, feedback=bool(r.feedback),
@@ -183,6 +215,7 @@ def run_downstream(args, gene=None, quiet=False, exclude=(), G=None, und=None):
     genes = Wk.extend_regulon(df, regulon, tfs, args.max_targets)
     df, comp = annotate(df, G, gene, args, und)
     df.to_csv(os.path.join(out, "downstream_nodes.csv"), index=False)
+    if not exclude: seed_partners(gene, G, und, df, out, quiet=quiet)
     tf_df = df[df.is_endpoint].sort_values("score", ascending=False); tf_df.to_csv(os.path.join(out, "transcription_factors.csv"), index=False)
     if len(genes): genes.to_csv(os.path.join(out, "target_genes.csv"), index=False)
     flow = dict(mode="downstream", seed=gene, endpoint_label="transcription factors", regulon=f"{args.regulon} {args.conf}",

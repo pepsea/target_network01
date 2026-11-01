@@ -63,6 +63,7 @@ def research_gene(gene, run_sl=None, **options):
         upstream_nodes=_read(f"{out}/upstream/upstream_nodes.csv"), receptors=_read(f"{out}/upstream/receptors.csv"), ligands=_read(f"{out}/upstream/ligands.csv"),
         downstream_nodes=_read(f"{out}/downstream/downstream_nodes.csv"), tfs=_read(f"{out}/downstream/transcription_factors.csv"),
         target_genes=_read(f"{out}/downstream/target_genes.csv"), sl=_read(f"{out}/sl/synthetic_lethality.csv"),
+        partners=_read(f"{out}/upstream/partners.csv"),      # physical / complex partners of the seed (not walked; hypothesis table)
         views=dict(upstream_flow=f"{out}/upstream/flow.html", upstream_cell_map=f"{out}/upstream/cell_map.html",
                    downstream_flow=f"{out}/downstream/flow.html", downstream_cell_map=f"{out}/downstream/cell_map.html",
                    sl=f"{out}/sl/synthetic_lethality.html"))
