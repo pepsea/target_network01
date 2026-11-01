@@ -43,6 +43,10 @@ HPA_URL = "https://www.proteinatlas.org/download/rna_tissue_consensus.tsv.zip"
 EDGE_WEIGHT = {"SIGNOR": 0.9, "Reactome": 0.7, "SIGNOR+Reactome": 0.95}
 
 
+class DownloadError(RuntimeError):
+    """A network fetch failed; required layers stop the run, optional layers (STRING) are skipped."""
+
+
 # ------------------------------------------------------------------ cache helpers
 def _cache_path(key, ext):
     os.makedirs(CACHE, exist_ok=True)
@@ -56,8 +60,8 @@ def cached_text(key, url, params=None, sleep=0.25, binary=False):
     try:
         r = requests.get(url, params=params, headers=HEADERS, timeout=600); r.raise_for_status()
     except requests.RequestException as e:
-        raise SystemExit(f"[download] could not fetch {url.split('?')[0]} ({e.__class__.__name__}). "
-                         f"Set the local path in target_net.yaml (config file used: {CFG.get('_file') or 'none found'}) or check the network.")
+        raise DownloadError(f"[download] could not fetch {url.split('?')[0]} ({e.__class__.__name__}: {e}). "
+                            f"Set the local path in target_net.yaml (config file used: {CFG.get('_file') or 'none found'}) or check the network.")
     time.sleep(sleep)
     data = r.content if binary else r.text
     open(fn, "wb" if binary else "w").write(data)
@@ -163,18 +167,41 @@ def merge_directed(*dfs):
     return out
 
 
-def load_string(genes, min_score=700, demo=False):
+def load_string(genes, min_score=700, demo=False, batch=500):
+    """Physical edges among `genes` (experimental + database channels), via the STRING API (POST, batched).
+    Optional layer: any failure returns an empty table with a warning instead of stopping the run."""
     if demo:
         return _demo_string()
+    empty = pd.DataFrame(columns=["a", "b", "source"])
     min_score = _cfgmod.db(CFG, "string", "min_score") or min_score
     if not CFG.get("allow_download", True):
-        print("[STRING] offline mode: physical layer skipped"); return pd.DataFrame(columns=["a", "b", "source"])
-    txt = cached_text("string_" + str(abs(hash(tuple(sorted(genes))))), "https://string-db.org/api/tsv/network",
-                      {"identifiers": "\r".join(sorted(genes)), "species": 9606, "required_score": min_score,
-                       "network_type": "physical", "caller_identity": HEADERS["User-Agent"]})
-    df = pd.read_csv(io.StringIO(txt), sep="\t")
+        print("[STRING] offline mode: physical layer skipped"); return empty
+    genes = sorted(set(genes))
+    key = "string_" + str(abs(hash((tuple(genes), min_score))))
+    fn = _cache_path(key, ".tsv")
+    if os.path.exists(fn):
+        df = pd.read_csv(fn, sep="\t")
+    else:
+        frames = []
+        try:
+            for i in range(0, len(genes), batch):
+                chunk = genes[i:i + batch]
+                r = requests.post("https://string-db.org/api/tsv/network",
+                                  data={"identifiers": "\r".join(chunk), "species": 9606, "required_score": min_score,
+                                        "network_type": "physical", "caller_identity": HEADERS["User-Agent"]},
+                                  headers=HEADERS, timeout=300)
+                r.raise_for_status(); time.sleep(0.5)
+                frames.append(pd.read_csv(io.StringIO(r.text), sep="\t"))
+        except Exception as e:
+            print(f"[STRING] skipped (physical-contact column will be empty): {e.__class__.__name__}: {str(e)[:120]}"); return empty
+        df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+        if len(df): df.to_csv(fn, sep="\t", index=False)
+    if not len(df) or "escore" not in df.columns:
+        print("[STRING] no edges returned"); return empty
     df = df[(df.escore > 0) | (df.dscore > 0)]
-    return pd.DataFrame({"a": df.preferredName_A.str.upper(), "b": df.preferredName_B.str.upper(), "source": "STRING"})
+    out = pd.DataFrame({"a": df.preferredName_A.str.upper(), "b": df.preferredName_B.str.upper(), "source": "STRING"}).drop_duplicates()
+    print(f"[STRING] {len(out)} physical edges among {len(genes)} genes")
+    return out
 
 
 # ------------------------------------------------------------------ bulk UniProt (receptors + compartments offline)

@@ -291,7 +291,10 @@ def main():
             D.set_config(cfg); print(f"saved {args.save}: {len(D.load_regulon(path=os.path.expanduser(args.save)))} edges")
         return
     apply_config(args)
-    {"upstream": run_upstream, "downstream": run_downstream, "sl": run_sl, "crosstalk": run_crosstalk}[args.mode](args)
+    try:
+        {"upstream": run_upstream, "downstream": run_downstream, "sl": run_sl, "crosstalk": run_crosstalk}[args.mode](args)
+    except D.DownloadError as e:
+        sys.exit(str(e))
 
 
 if __name__ == "__main__":
