@@ -64,8 +64,8 @@ def research_gene(gene, run_sl=None, **options):
         downstream_nodes=_read(f"{out}/downstream/downstream_nodes.csv"), tfs=_read(f"{out}/downstream/transcription_factors.csv"),
         target_genes=_read(f"{out}/downstream/target_genes.csv"), sl=_read(f"{out}/sl/synthetic_lethality.csv"),
         partners=_read(f"{out}/upstream/partners.csv"),      # physical / complex partners of the seed (not walked; hypothesis table)
-        views=dict(upstream_flow=f"{out}/upstream/flow.html", upstream_cell_map=f"{out}/upstream/cell_map.html",
-                   downstream_flow=f"{out}/downstream/flow.html", downstream_cell_map=f"{out}/downstream/cell_map.html",
+        views=dict(upstream_flow=f"{out}/upstream/flow.html", upstream_hop1=f"{out}/upstream/hop1.html", upstream_cell_map=f"{out}/upstream/cell_map.html",
+                   downstream_flow=f"{out}/downstream/flow.html", downstream_hop1=f"{out}/downstream/hop1.html", downstream_cell_map=f"{out}/downstream/cell_map.html",
                    sl=f"{out}/sl/synthetic_lethality.html"))
     res["genes"] = gene_table(res)                       # one row per gene, upstream + downstream merged
     res["genes"].to_csv(f"{out}/gene_table.csv", index=False)
@@ -181,6 +181,8 @@ def figure(view_path, focus=None, **kw):
     if not os.path.exists(jp):
         print(f"(no view at {jp})"); return None
     kind = os.path.basename(jp)
+    if kind.startswith("hop1"):
+        kw.setdefault("max_nodes", 10**6); kw.setdefault("sub_max", 6); return plots.flow_figure(jp, **kw)
     fn = plots.flow_figure if kind.startswith(("flow", "core_impact")) else plots.cell_map_figure if kind.startswith("cell_map") else \
          plots.crosstalk_figure if kind.startswith("crosstalk") else plots.volcano_figure
     if fn is plots.volcano_figure: kw.pop("focus", None)

@@ -263,7 +263,7 @@ def _focus_edge_style(focus):
 
 
 # --------------------------------------------------------------------------- flow (upstream / downstream)
-def flow_figure(json_path, width=1000, height=650, max_nodes=150, focus=None, caption=True):
+def flow_figure(json_path, width=1000, height=650, max_nodes=150, focus=None, caption=True, sub_max=3):
     """focus: genes to highlight (list / file / dict gene->value); other nodes become small grey dots."""
     F = _load(json_path)
     fset, fvals = parse_focus(focus); fset_or_none = fset if focus is not None else None
@@ -280,7 +280,7 @@ def flow_figure(json_path, width=1000, height=650, max_nodes=150, focus=None, ca
     col_x = lambda c: (c + 0.5) / ncol * 100
     if F["mode"] == "upstream": col_x = lambda c, f=col_x: 100 - f(c)
     # a hop with many genes is wrapped into side-by-side sub-columns (at most ROWS genes each) instead of one very tall column
-    ROWS, SUBMAX = 28, 3
+    ROWS, SUBMAX = 28, sub_max
     slot = 100 / ncol
     pos = {}; nsub = {}
     for c in range(ncol):
@@ -301,7 +301,9 @@ def flow_figure(json_path, width=1000, height=650, max_nodes=150, focus=None, ca
     wrapped = any(k > 1 for k in nsub.values())
     label_size = 9 if wrapped else 10
     rad = lambda nid: 2.2 if byid[nid]["cls"] == "seed" else 1.0 + 1.6 * byid[nid]["score"]
-    fig = _base(f"{F['mode']} pathway of {F['seed']}  —  {F.get('subtitle', '')}", width if not wrapped else int(width * 1.15), max(height, 16 * tallest + 120))
+    title = (f"direct {'regulators' if F['mode'] == 'upstream' else 'targets'} of {F['seed']} (hop 1, all {len(nodes) - 1} genes)  —  {F.get('subtitle', '')}"
+             if F.get("hop1_only") else f"{F['mode']} pathway of {F['seed']}  —  {F.get('subtitle', '')}")
+    fig = _base(title, width if not wrapped else int(width * (1.0 + 0.15 * min(nsub_max := max(nsub.values()), 4))), max(height, 16 * tallest + 120))
     _edge_traces(fig, F["edges"], pos, rad, color_fn=_focus_edge_style(fset_or_none))
     if focus is not None: fig.update_layout(title_text=fig.layout.title.text + f"  |  focus: {len(fset & set(byid))}/{len(fset)} focus genes in view")
     hover = lambda n: (f"<b>{n['id']}</b><br>hops {n['hops']} · path score {n['score']:.2f}<br>net sign: "

@@ -81,9 +81,13 @@ def write_html(tpl, token, payload, path, d3=False):
     try:
         from targetnet import plots as P
         kind = os.path.basename(jp)
-        fn = P.flow_figure if kind.startswith(("flow", "core_impact")) else P.cell_map_figure if kind.startswith("cell_map") else \
-             P.crosstalk_figure if kind.startswith("crosstalk") else P.volcano_figure
-        fn(jp).write_html(path, include_plotlyjs="cdn", full_html=True)
+        if kind.startswith("hop1"):
+            fig = P.flow_figure(jp, max_nodes=10**6, sub_max=6)
+        else:
+            fn = P.flow_figure if kind.startswith(("flow", "core_impact")) else P.cell_map_figure if kind.startswith("cell_map") else \
+                 P.crosstalk_figure if kind.startswith("crosstalk") else P.volcano_figure
+            fig = fn(jp)
+        fig.write_html(path, include_plotlyjs="cdn", full_html=True)
     except Exception as e:   # plotly missing or figure error: fall back to the D3 page so a view always exists
         print(f"[view] Plotly export failed ({e.__class__.__name__}: {e}); writing D3 page instead"); d3 = True
         open(path, "w").write(open(os.path.join(TPL, tpl)).read().replace(token, json.dumps(payload)))
@@ -199,6 +203,7 @@ def run_upstream(args):
                 edges=_edges(G, set(df.node) | {gene}))
     write_html("flow.html", "/*__FLOW_JSON__*/", flow, os.path.join(out, "flow.html"), d3=getattr(args, "d3", False))
     write_html("cell_map.html", "/*__NETWORK_JSON__*/", cell_map_payload(gene, df, G, comp, "upstream", und), os.path.join(out, "cell_map.html"), d3=getattr(args, "d3", False))
+    write_hop1_view(flow, out)
     print(f"\n[upstream] {len(df)} nodes, {len(rec)} receptors, {len(lig)} ligands -> {out}/")
     return df
     print(rec.head(12)[["node", "hops", "score", "influence", "sign", "sign_confidence", "best_path"]].to_string(index=False))
@@ -231,6 +236,7 @@ def run_downstream(args, gene=None, quiet=False, exclude=(), G=None, und=None):
                 edges=_edges(G, set(df.node) | {gene}))
     write_html("flow.html", "/*__FLOW_JSON__*/", flow, os.path.join(out, "flow.html"), d3=getattr(args, "d3", False))
     write_html("cell_map.html", "/*__NETWORK_JSON__*/", cell_map_payload(gene, df, G, comp, "downstream", und), os.path.join(out, "cell_map.html"), d3=getattr(args, "d3", False))
+    write_hop1_view(flow, out)
     if not quiet:
         print(f"\n[downstream] {len(df)} nodes, {len(tf_df)} TFs, {genes.gene.nunique() if len(genes) else 0} genes -> {out}/")
         print(tf_df.head(12)[["node", "hops", "score", "influence", "sign", "sign_confidence", "best_path"]].to_string(index=False))
@@ -467,6 +473,16 @@ def signor_lookup(gene, cfg):
     if len(other): print(f"rows where {g} appears only inside a complex / family name (dropped by the loader): {len(other)}  e.g. {sorted(set(other.ENTITYA) | set(other.ENTITYB))[:6]}")
     nd = hit[~direct]; 
     if len(nd): print(f"indirect (DIRECT=NO) rows: {len(nd)} (kept only with signor.indirect: weight|keep)")
+
+
+def write_hop1_view(flow, out, d3=False):
+    """Second view of the same walk: the seed and EVERY direct neighbour (hop 1), nothing else, no node cap.
+    The full flow view is best-path oriented and capped; this one answers 'what touches my gene directly?' exhaustively."""
+    keep = {n["id"] for n in flow["nodes"] if n.get("hops", 0) <= 1}
+    h1 = dict(flow, hop1_only=True, nodes=[n for n in flow["nodes"] if n["id"] in keep],
+              edges=[e for e in flow["edges"] if e["source"] in keep and e["target"] in keep], genes=[])
+    h1["subtitle"] = f"every direct neighbour in the signed graph ({len(keep) - 1}); edge sign and weight as in the full view; endpoints (receptors / TFs) in their own column"
+    write_html("flow.html", "/*__FLOW_JSON__*/", h1, os.path.join(out, "hop1.html"), d3=d3)
 
 
 def _edges(G, keep):
