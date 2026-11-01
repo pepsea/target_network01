@@ -67,7 +67,7 @@ def research_gene(gene, run_sl=None, **options):
     return res
 
 
-def gene_table(r):
+def gene_table(r, focus=None, focus_only=False):
     """
     One row per gene reached from the seed, upstream and/or downstream, merged into a single ranked table.
     Columns: gene, direction (upstream / downstream / both), hops (shortest, either direction), hops_up, hops_down,
@@ -75,6 +75,9 @@ def gene_table(r):
     sign_up (gene's net effect ON the seed), sign_down (seed's net effect on the gene), confidences, feedback,
     coessentiality_r, physical_with_seed, compartment, n_target_genes (TFs), sl_hit, best_path_up, best_path_down.
     Sorted by hops then total influence.
+    focus: same formats as the figures (plain text / list / file / dict gene->value). Adds `focus` (bool) and `focus_value`,
+    puts focus genes first, and records focus genes NOT reached by the walk in table.attrs["focus_missing"].
+    focus_only=True returns only the focus genes.
     """
     up, dn = r["upstream_nodes"], r["downstream_nodes"]
     cols = ["node", "hops", "score", "influence", "sign", "sign_confidence", "is_endpoint", "feedback", "coessentiality_r",
@@ -108,7 +111,31 @@ def gene_table(r):
     t = t[[c for c in order if c in t.columns]].rename(columns={"node": "gene"})
     for c in ("hops_up", "hops_down"):
         if c in t.columns: t[c] = t[c].astype("Int64")
-    return t.sort_values(["hops", "influence_total"], ascending=[True, False]).reset_index(drop=True)
+    t = t.sort_values(["hops", "influence_total"], ascending=[True, False]).reset_index(drop=True)
+    if focus is not None:
+        from .plots import parse_focus
+        fset, fvals = parse_focus(focus)
+        t.insert(1, "focus", t.gene.isin(fset))
+        t.insert(2, "focus_value", t.gene.map(fvals))
+        t = t.sort_values(["focus", "hops", "influence_total"], ascending=[False, True, False]).reset_index(drop=True)
+        t.attrs["focus_missing"] = sorted(fset - set(t.gene) - {r["gene"]})
+        t.attrs["focus_found"] = sorted(fset & set(t.gene))
+        if focus_only: t = t[t.focus].reset_index(drop=True)
+    return t
+
+
+def focus_summary(r, focus):
+    """Which focus genes are in the target's network, where, and which are not reached at all."""
+    t = gene_table(r, focus=focus)
+    found, missing = t.attrs.get("focus_found", []), t.attrs.get("focus_missing", [])
+    lines = [f"focus genes in the {r['gene']} network: {len(found)} / {len(found) + len(missing)}"]
+    for row in t[t.focus].itertuples():
+        where = {"upstream": f"upstream, {row.hops_up} hop(s), {'activates' if row.sign_up == 1 else 'inhibits' if row.sign_up == -1 else 'mixed effect on'} {r['gene']}",
+                 "downstream": f"downstream, {row.hops_down} hop(s), {r['gene']} {'activates' if row.sign_down == 1 else 'inhibits' if row.sign_down == -1 else 'has mixed effect on'} it",
+                 "both": f"both directions (loop), up {row.hops_up} / down {row.hops_down} hop(s)"}[row.direction]
+        lines.append(f"  {row.gene:<10} {row.role:<12} {where}" + (f"  value {row.focus_value:+.2f}" if pd.notna(row.focus_value) else ""))
+    if missing: lines.append(f"not reached within the walk (not in SIGNOR neighbourhood, or beyond max_depth/min_score): {', '.join(missing)}")
+    return "\n".join(lines)
 
 
 def research_crosstalk(core, target, **options):
