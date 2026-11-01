@@ -54,8 +54,8 @@ CAPTIONS = {
   "       Line thickness ∝ edge confidence (SIGNOR score). Only edges among drawn nodes are shown; the walk itself used the whole graph.",
   "NODES  black diamond = the analysed gene (seed) · blue = endpoint (receptor in upstream view, transcription factor in downstream view) · grey = intermediate.",
   "       Fill saturation ∝ path score. Outline: green = seed activates this node (consensus over all paths), red = inhibits, grey dashed = mixed; long dashes = feedback node (also upstream of the seed).",
-  "COLUMNS hop N = shortest number of edges from the seed; hop 1 = direct neighbours (all in the tables; in the figure FOCUS genes come first, then hop 1, within the node cap); endpoints are collected in the last column(s): upstream = receptors, then their secreted ligands (teal; UniProt Secreted + Cytokine/Growth factor/Hormone); downstream = TFs. Right-hand boxes: DoRothEA target genes per TF (↑ induced, ↓ repressed by the seed); hover to list them.",
-  "FOCUS  with a focus list: focus genes are orange with bold dark-orange labels (blue→red fill instead when a value such as log2FC is supplied); all other nodes small grey; edges not touching a focus gene are lighter."],
+  "COLUMNS hop N = shortest number of edges from the seed; when the walk exceeds the node cap, each hop shows its highest-scoring genes (FOCUS genes are highlighted when they are among them; all genes are in the tables); endpoints are collected in the last column(s): upstream = receptors, then their secreted ligands (teal; UniProt Secreted + Cytokine/Growth factor/Hormone); downstream = TFs. Right-hand boxes: DoRothEA target genes per TF (↑ induced, ↓ repressed by the seed); hover to list them.",
+  "FOCUS  with a focus list: focus genes are orange with bold dark-orange labels (blue→red fill instead when a value such as log2FC is supplied); all other nodes small grey; edges not touching a focus gene are lighter. Focus genes outside the drawn high-score set are listed in the title, not forced into the figure."],
  "cell_map": [
   "LINES  dark grey curve with ▶ (activation) or ┃ (inhibition) = signaling edge; dotted light grey straight line = physical contact only (STRING / Reactome undirected), no direction or sign.",
   "NODES  placed by UniProt subcellular location (secreted ligands outside the membrane ring, membrane ring, cytosol ring, nucleus, lysosome, mitochondrion, ER/Golgi); position inside a zone is arbitrary.",
@@ -143,25 +143,45 @@ def _edge_traces(fig, edges, pos, rad, color_fn=None, dash_fn=None, name="edge",
                                              line=dict(width=max(1.5, width), color=hcol))))
 
 
-def _cap_nodes(nodes, edges, max_nodes, keep_ids=()):
-    """Cap the drawn nodes at max_nodes so the view stays readable. Priority: the seed(s) and FOCUS genes (always kept),
-    then direct neighbours of a seed (hop 1, best score first), then the best paths of the top-scoring endpoints (so the hop
-    structure survives), then the best remaining nodes. Edges to removed nodes are dropped; the full tables keep everything."""
+def _cap_nodes(nodes, edges, max_nodes, keep_ids=(), per_hop=False):
+    """Cap the drawn nodes at max_nodes so the view stays readable; the full tables keep everything.
+    per_hop=True (gene research flow / cell map): the budget is shared across hop columns and filled with the HIGHEST-SCORING genes
+    of each hop; FOCUS genes are highlighted only if they are among them (keep_ids is not forced).
+    per_hop=False (legacy): seeds and keep_ids first, then hop-1 by score, then best paths of the top endpoints, then best remaining."""
     if len(nodes) <= max_nodes: return nodes, edges, False
     byid = {n["id"]: n for n in nodes}
-    keep = {n["id"] for n in nodes if n.get("cls") == "seed" or n["id"] in keep_ids}
-    hop1 = lambda n: 1 in (n.get("hops"), n.get("hops_c"), n.get("hops_x"))
-    for n in sorted([n for n in nodes if hop1(n)], key=lambda n: -n.get("score", 0)):
-        if len(keep) >= max_nodes: break
-        keep.add(n["id"])
-    ends = sorted([n for n in nodes if n.get("is_endpoint")], key=lambda n: -n.get("score", 0))
-    for n in ends:                                   # whole best path of each endpoint, best endpoints first
-        path = [p.strip() for p in str(n.get("best_path", "")).split(">")]
-        if len(keep | set(path)) > max_nodes: break
-        keep |= {p for p in path if p in byid}
-    for n in sorted(nodes, key=lambda n: -n.get("score", 0)):
-        if len(keep) >= max_nodes: break
-        keep.add(n["id"])
+    keep = {n["id"] for n in nodes if n.get("cls") == "seed"}
+    if per_hop:
+        keep |= {n["id"] for n in nodes if n["id"] in keep_ids}          # analysis results that the view exists to show (e.g. interference-edge ends); never FOCUS
+        cols = defaultdict(list)
+        for n in nodes:
+            if n["id"] in keep: continue
+            lane = n.get("lane", "")
+            hp = n.get("hops_x", 0) if lane == "goi" else n.get("hops_c", n.get("hops", 0))
+            cols[(lane, "end" if (n.get("is_endpoint") and not lane) else hp)].append(n)
+        for arr in cols.values(): arr.sort(key=lambda n: -n.get("score", 0))
+        budget = max_nodes - len(keep)
+        quota = {k: 0 for k in cols}
+        remaining = budget
+        while remaining > 0 and any(quota[k] < len(cols[k]) for k in cols):      # round-robin over columns, best score first
+            for k in cols:
+                if remaining <= 0: break
+                if quota[k] < len(cols[k]): quota[k] += 1; remaining -= 1
+        for k, arr in cols.items(): keep |= {n["id"] for n in arr[:quota[k]]}
+    else:
+        keep |= {n["id"] for n in nodes if n["id"] in keep_ids}
+        hop1 = lambda n: 1 in (n.get("hops"), n.get("hops_c"), n.get("hops_x"))
+        for n in sorted([n for n in nodes if hop1(n)], key=lambda n: -n.get("score", 0)):
+            if len(keep) >= max_nodes: break
+            keep.add(n["id"])
+        ends = sorted([n for n in nodes if n.get("is_endpoint")], key=lambda n: -n.get("score", 0))
+        for n in ends:                                   # whole best path of each endpoint, best endpoints first
+            path = [p.strip() for p in str(n.get("best_path", "")).split(">")]
+            if len(keep | set(path)) > max_nodes: break
+            keep |= {p for p in path if p in byid}
+        for n in sorted(nodes, key=lambda n: -n.get("score", 0)):
+            if len(keep) >= max_nodes: break
+            keep.add(n["id"])
     nodes = [n for n in nodes if n["id"] in keep]
     edges = [e for e in edges if e.get("source", e.get("from_node")) in keep and e.get("target", e.get("to_node")) in keep]
     return nodes, edges, True
@@ -267,9 +287,9 @@ def flow_figure(json_path, width=1000, height=650, max_nodes=150, focus=None, ca
     """focus: genes to highlight (list / file / dict gene->value); other nodes become small grey dots."""
     F = _load(json_path)
     fset, fvals = parse_focus(focus); fset_or_none = fset if focus is not None else None
-    nodes, edges, capped = _cap_nodes(F["nodes"], F["edges"], max_nodes, keep_ids=fset)
+    nodes, edges, capped = _cap_nodes(F["nodes"], F["edges"], max_nodes, per_hop=True)
     F["edges"] = edges; byid = {n["id"]: n for n in nodes}
-    if capped: F["subtitle"] = f"showing top {max_nodes} of {len(F['nodes'])} nodes by path score (full table in CSV / D3 view). " + F.get("subtitle", "")
+    if capped: F["subtitle"] = f"showing the {max_nodes} highest-scoring of {len(F['nodes'])} nodes, per hop (full table in CSV). " + F.get("subtitle", "")
     F["genes"] = [g for g in F.get("genes", []) if g["tf"] in byid]
     # columns: intermediates by hop, endpoints in one final column; upstream mode is drawn right-to-left
     max_mid = max([n["hops"] for n in nodes if not n.get("is_endpoint")] or [0])
@@ -305,7 +325,10 @@ def flow_figure(json_path, width=1000, height=650, max_nodes=150, focus=None, ca
              if F.get("hop1_only") else f"{F['mode']} pathway of {F['seed']}  —  {F.get('subtitle', '')}")
     fig = _base(title, width if not wrapped else int(width * (1.0 + 0.15 * min(nsub_max := max(nsub.values()), 4))), max(height, 16 * tallest + 120))
     _edge_traces(fig, F["edges"], pos, rad, color_fn=_focus_edge_style(fset_or_none))
-    if focus is not None: fig.update_layout(title_text=fig.layout.title.text + f"  |  focus: {len(fset & set(byid))}/{len(fset)} focus genes in view")
+    if focus is not None:
+        missing = sorted(fset - set(byid))
+        fig.update_layout(title_text=fig.layout.title.text + f"  |  focus: {len(fset & set(byid))}/{len(fset)} focus genes among the drawn high-score nodes"
+                          + (f" (not drawn / not reached: {', '.join(missing[:8])}{'…' if len(missing) > 8 else ''})" if missing else ""))
     hover = lambda n: (f"<b>{n['id']}</b><br>hops {n['hops']} · path score {n['score']:.2f}<br>net sign: "
                        f"{'activated' if n['sign'] == 1 else 'inhibited' if n['sign'] == -1 else 'mixed'}"
                        + ("<br>endpoint" if n.get("is_endpoint") else "") + ("<br>feedback node" if n.get("feedback") else "")
@@ -375,7 +398,7 @@ _ZONES = dict(extracellular=(50, 50, 52, 56), membrane=(50, 50, 46, 50), cytosol
 
 def cell_map_figure(json_path, width=900, height=700, max_nodes=150, focus=None, caption=True):
     N = _load(json_path); fset, fvals = parse_focus(focus); fset_or_none = fset if focus is not None else None
-    nodes, edges, capped = _cap_nodes(N["nodes"], N["edges"], max_nodes, keep_ids=fset); N["edges"] = edges
+    nodes, edges, capped = _cap_nodes(N["nodes"], N["edges"], max_nodes, per_hop=True); N["edges"] = edges
     byid = {n["id"]: n for n in nodes}
     if capped: N["mode"] = f"{N.get('mode', '')} (top {max_nodes} of {len(N['nodes'])} nodes)"
     pos = {}
@@ -461,8 +484,8 @@ def crosstalk_figure(json_path, width=1100, height=820, max_nodes=120, max_edges
     X = _load(json_path); fset, fvals = parse_focus(focus); fset_or_none = fset if focus is not None else None
     n_all_edges = len(X["interference"])
     X["interference"] = sorted(X["interference"], key=lambda e: (e.get("rank", 0)))[:max_edges]
-    keep = {e["from_node"] for e in X["interference"]} | {e["to_node"] for e in X["interference"]} | fset
-    nodes, edges, capped = _cap_nodes(X["nodes"], X["edges"], max_nodes, keep_ids=keep); X["edges"] = edges
+    keep = {e["from_node"] for e in X["interference"]} | {e["to_node"] for e in X["interference"]}      # the drawn interference edges need their ends
+    nodes, edges, capped = _cap_nodes(X["nodes"], X["edges"], max_nodes, keep_ids=keep, per_hop=True); X["edges"] = edges
     byid = {n["id"]: n for n in nodes}
     lane_x = dict(causal=18, shared=50, goi=82)
     max_hop = max([max(n.get("hops_c", 0) or 0, n.get("hops_x", 0) or 0) for n in nodes] or [1])
@@ -522,6 +545,10 @@ def crosstalk_figure(json_path, width=1100, height=820, max_nodes=120, max_edges
                     lambda n: "#111" if n.get("is_endpoint") else "rgba(0,0,0,0)", hover, name, line_w=1.5, focus=fset_or_none, values=fvals, label_size=9)
         fig.add_annotation(x=lane_x[lane], y=99, text=name.upper(), showarrow=False, font=dict(size=11, color="#888"))
     _node_trace(fig, [n for n in nodes if n["cls"] == "seed"], pos, rad, lambda n: COL["seed"], lambda n: "#111", hover, "seed genes", focus=fset_or_none, values=fvals)
+    if focus is not None:
+        missing = sorted(fset - set(byid))
+        fig.update_layout(title_text=fig.layout.title.text + f"  |  focus: {len(fset & set(byid))}/{len(fset)} among drawn nodes"
+                          + (f" (not drawn / not reached: {', '.join(missing[:8])}{'…' if len(missing) > 8 else ''})" if missing else ""))
     fig.update_xaxes(range=[0, 100]); fig.update_yaxes(range=[y_bottom, 102])
     _edge_legend(fig, ("act", "inh", "syn", "ant", "chap"))
     if caption: add_caption(fig, "crosstalk")
