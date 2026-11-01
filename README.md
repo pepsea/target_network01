@@ -80,6 +80,14 @@ In notebooks use the Plotly versions (`targetnet.plots`, via `api.figure(view_pa
 - `crosstalk.html` — three lanes (C pathway / shared / X pathway); thick green/red edges = interference; tables of edges and endpoint agreement.
 - `synthetic_lethality.html` — volcano plot + ranked hits (orange), pathway members in blue.
 
+## Offline UniProt (recommended)
+One bulk file replaces hundreds of UniProt API calls (receptors + compartments):
+```bash
+mkdir -p ~/Documents/database/uniprot && curl -o ~/Documents/database/uniprot/uniprot_human_reviewed.tsv \
+  "https://rest.uniprot.org/uniprotkb/stream?query=organism_id:9606+AND+reviewed:true&fields=accession,gene_primary,keyword,cc_subcellular_location&format=tsv"
+```
+and set `databases.uniprot.path` to it.
+
 ## SIGNOR input
 Either the API dump or SIGNOR's full download `all_data_DD_MM_YY.tsv` works (`databases.signor.path`). The full file is
 filtered to human (TAX_ID 9606) protein→protein rows; the SIGNOR confidence `SCORE` scales the edge weight (×0.6–1.0).

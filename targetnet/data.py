@@ -171,15 +171,43 @@ def load_string(genes, min_score=700, demo=False):
     return pd.DataFrame({"a": df.preferredName_A.str.upper(), "b": df.preferredName_B.str.upper(), "source": "STRING"})
 
 
+# ------------------------------------------------------------------ bulk UniProt (receptors + compartments offline)
+_UNIPROT = {}
+
+def load_uniprot_bulk():
+    """Human reviewed UniProt tsv with columns Entry, Gene Names (primary), Keywords, Subcellular location [CC]. Returns DataFrame or None."""
+    if "df" in _UNIPROT: return _UNIPROT["df"]
+    loc = _cfgmod.db(CFG, "uniprot")
+    if loc and os.path.exists(loc):
+        df = pd.read_csv(loc, sep="\t", dtype=str).fillna("")
+        cols = {c.lower(): c for c in df.columns}
+        gene = next((cols[c] for c in cols if c.startswith("gene names")), None)
+        kw = next((cols[c] for c in cols if c.startswith("keywords")), None)
+        sl = next((cols[c] for c in cols if c.startswith("subcellular location")), None)
+        if not (gene and sl):
+            print(f"[UniProt] bulk file lacks gene / subcellular-location columns: {list(df.columns)}"); _UNIPROT["df"] = None; return None
+        out = pd.DataFrame({"gene": df[gene].str.split(";").str[0].str.strip().str.upper(), "keywords": df[kw] if kw else "", "location": df[sl]})
+        out = out[out.gene != ""].drop_duplicates("gene")
+        print(f"[UniProt] bulk table: {len(out)} genes from {loc}")
+        _UNIPROT["df"] = out; return out
+    _UNIPROT["df"] = None; return None
+
+
 # ------------------------------------------------------------------ endpoint sets
 def load_receptors(demo=False):
     """Gene symbols with UniProt keyword Receptor (KW-0675) and cell-membrane location."""
     if demo:
         return _demo_receptors()
-    loc = _local("receptors")
-    if loc:
+    loc = _cfgmod.db(CFG, "receptors")
+    if loc and os.path.exists(loc):
         genes = {l.strip().upper() for l in open(loc) if l.strip() and not l.startswith("#")}
         print(f"[receptors] {len(genes)} from {loc}"); return genes
+    up = load_uniprot_bulk()
+    if up is not None:
+        m = up.keywords.str.contains(r"\bReceptor\b", case=False) & up.location.str.contains("Cell membrane|Plasma membrane", case=False)
+        genes = set(up[m].gene); print(f"[receptors] {len(genes)} from bulk UniProt (keyword Receptor + cell membrane)"); return genes
+    if not CFG.get("allow_download", True):
+        raise SystemExit("[config] receptors: set databases.uniprot.path (bulk tsv) or databases.receptors.path, or allow_download")
     genes = set(); cursor_url = "https://rest.uniprot.org/uniprotkb/search"
     params = {"query": "keyword:KW-0675 AND organism_id:9606 AND reviewed:true AND cc_scl_term:SL-0039",
               "fields": "gene_primary", "format": "tsv", "size": 500}
@@ -269,6 +297,15 @@ def load_compartments(genes, demo=False):
     kw = [("plasma membrane", "membrane"), ("cell membrane", "membrane"), ("lysosome", "lysosome"),
           ("late endosome", "lysosome"), ("mitochondri", "mitochondrion"), ("endoplasmic reticulum", "ER_golgi"),
           ("golgi", "ER_golgi"), ("nucleus", "nucleus"), ("nucleolus", "nucleus"), ("cytoplasm", "cytosol"), ("cytosol", "cytosol")]
+    def first_mentioned(txt):   # UniProt lists the primary location first -> take the earliest keyword hit
+        hits = [(txt.find(k), c) for k, c in kw if k in txt]
+        return min(hits)[1] if hits else "cytosol"
+    up = load_uniprot_bulk()
+    if up is not None:
+        locmap = dict(zip(up.gene, up.location.str.lower()))
+        return {g: first_mentioned(locmap.get(g, "")) for g in genes}
+    if not CFG.get("allow_download", True):
+        print("[UniProt] offline and no bulk file: all compartments set to cytosol"); return {g: "cytosol" for g in genes}
     out = {}
     for g in sorted(genes):
         try:
@@ -276,7 +313,7 @@ def load_compartments(genes, demo=False):
                              {"query": f"gene_exact:{g} AND organism_id:9606 AND reviewed:true",
                               "fields": "cc_subcellular_location", "format": "json", "size": 1})
             txt = json.dumps(js).lower()
-            out[g] = next((c for k, c in kw if k in txt), "cytosol")
+            out[g] = first_mentioned(txt)
         except Exception:
             out[g] = "cytosol"
     return out

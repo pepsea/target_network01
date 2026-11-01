@@ -20,7 +20,9 @@ DEFAULTS = {
         "signor":      {"path": None, "url": "https://signor.uniroma2.it/getData.php?organism=9606"},
         "reactome_fi": {"path": None, "url": "https://reactome.org/download/tools/ReatomeFIs/FIsInGene_070323_with_annotations.txt.zip"},
         "tf_list":     {"path": None, "url": "http://humantfs.ccbr.utoronto.ca/download/v_1.01/DatabaseExtract_v_1.01.csv"},
-        "receptors":   {"path": None},                       # txt, one gene symbol per line (else UniProt API)
+        "uniprot":     {"path": None, "url": "https://rest.uniprot.org/uniprotkb/stream?query=organism_id:9606+AND+reviewed:true&fields=accession,gene_primary,keyword,cc_subcellular_location&format=tsv"},
+                                                             # bulk human reviewed UniProt tsv -> receptors + compartments offline
+        "receptors":   {"path": None},                       # txt, one gene symbol per line (overrides uniprot bulk; else UniProt API)
         "regulon":     {"source": "dorothea", "conf": "ABC", "path": None},   # tsv: tf,target,mor,confidence (else OmniPath)
         "string":      {"min_score": 700},                   # STRING API only
         "compartments":{"path": None},                       # tsv: gene<TAB>compartment (else UniProt API)
