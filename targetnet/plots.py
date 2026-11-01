@@ -47,7 +47,7 @@ CAPTIONS = {
   "NODES  dark blue = seed gene · blue = endpoint (receptor in upstream view, transcription factor in downstream view) · grey = intermediate.",
   "       Fill saturation ∝ path score. Outline: green = seed activates this node (consensus over all paths), red = inhibits, grey dashed = mixed; long dashes = feedback node (also upstream of the seed).",
   "COLUMNS hop N = shortest number of edges from the seed; endpoints are collected in the last column. Right-hand boxes: DoRothEA target genes per TF (↑ induced, ↓ repressed by the seed); hover to list them.",
-  "FOCUS  with a focus list: focus genes keep colour/size (blue→red = supplied value, e.g. log2FC); all other nodes small grey; edges not touching a focus gene are lighter."],
+  "FOCUS  with a focus list: focus genes are orange with bold dark-orange labels (blue→red fill instead when a value such as log2FC is supplied); all other nodes small grey; edges not touching a focus gene are lighter."],
  "cell_map": [
   "LINES  dark grey curve with ▶ (activation) or ┃ (inhibition) = signaling edge; dotted light grey straight line = physical contact only (STRING / Reactome undirected), no direction or sign.",
   "NODES  placed by UniProt subcellular location (membrane ring, cytosol ring, nucleus, lysosome, mitochondrion, ER/Golgi); position inside a zone is arbitrary.",
@@ -194,6 +194,10 @@ def _value_colour(v, vmax):
     return f"rgb({r},{g},{b})"
 
 
+FOCUS_COL = "#E8862E"   # focus-gene fill (muted orange, distinct from the blue/grey class colours)
+FOCUS_TXT = "#9A4B00"   # focus-gene label and outline
+
+
 def _node_trace(fig, nodes, pos, rad, fill, line_col, hover, name, line_w=1.5, dash=None, show=True, focus=None, values=None, label_size=10):
     """focus = set of highlighted genes (None = no focus mode). In focus mode non-focus nodes are small grey dots without labels."""
     if not nodes: return
@@ -212,11 +216,16 @@ def _node_trace(fig, nodes, pos, rad, fill, line_col, hover, name, line_w=1.5, d
                                  marker=dict(size=[max(7, rad(n["id"]) * 4) for n in lo], color="#c4c4c4", line=dict(color="#9a9a9a", width=0.8)),
                                  hovertext=[hover(n) for n in lo], hoverinfo="text", name=f"{name} (not in focus list)", showlegend=show))
     if hi:
-        col = [(_value_colour(values[n["id"]], vmax) if n["id"] in values else fill(n)) for n in hi]
+        # focus genes: dedicated highlight colour (FOCUS_COL) so they stand out from every class colour; with a supplied value the
+        # fill becomes the blue->red value scale instead; the seed keeps its own colour
+        def fcol(n):
+            if n["id"] in values: return _value_colour(values[n["id"]], vmax)
+            return fill(n) if (n.get("cls") == "seed" and n["id"] not in focus) else FOCUS_COL
+        col = [fcol(n) for n in hi]
         fig.add_trace(go.Scatter(x=[pos[n["id"]][0] for n in hi], y=[pos[n["id"]][1] for n in hi], mode="markers+text",
                                  text=[f"<b>{n['id']}</b>" + (f" {values[n['id']]:+.2f}" if n["id"] in values else "") for n in hi],
-                                 textposition="middle right", textfont=dict(size=10),
-                                 marker=dict(size=[rad(n["id"]) * 6.5 for n in hi], color=col, line=dict(color="#111", width=1.6)),
+                                 textposition="middle right", textfont=dict(size=11, color=[FOCUS_TXT if n["id"] in focus else "#111" for n in hi]),
+                                 marker=dict(size=[rad(n["id"]) * 6.5 for n in hi], color=col, line=dict(color=FOCUS_TXT, width=1.8)),
                                  hovertext=[hover(n) + (f"<br>focus value {values[n['id']]:+.3f}" if n["id"] in values else "<br>focus gene") for n in hi],
                                  hoverinfo="text", name=f"{name} — focus" + (" (colour = value)" if values else ""), showlegend=show))
 
