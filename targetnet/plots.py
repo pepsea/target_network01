@@ -657,6 +657,30 @@ def cell_flow_figure(json_path, width=1100, height=820, max_nodes=None, focus=No
     return fig
 
 
+# --------------------------------------------------------------------------- direction bars (shared by both screens)
+def direction_bars_figure(tab, down_col, up_col, label_down, label_up, title, unit="", width=900, height=None, caption_text=None, extra_cols=()):
+    """Diverging horizontal bars, one row per target (ranked order): blue to the left = the DOWN / silencing part, red to the right = the UP /
+    releasing part. The two parts are shown separately on purpose: a target with equal parts is 'context-dependent', not 'no effect'."""
+    tab = tab.copy()
+    if not len(tab): return _base(title + ": nothing scored", width, 300)
+    height = height or max(320, 34 * len(tab) + 220)
+    fig = _base(title, width, height)
+    y = list(range(len(tab)))[::-1]
+    hv = [f"<b>{r.target}</b> rank {r['rank']}<br>{label_down}: {r[down_col]:.2f}<br>{label_up}: {r[up_col]:.2f}"
+          + "".join(f"<br>{c}: {r[c]}" for c in extra_cols if c in tab.columns) for _, r in tab.iterrows()]
+    fig.add_trace(go.Bar(y=y, x=-tab[down_col], orientation="h", marker=dict(color="#3a6fb0"), name=label_down, hovertext=hv, hoverinfo="text"))
+    fig.add_trace(go.Bar(y=y, x=tab[up_col], orientation="h", marker=dict(color="#c0392b"), name=label_up, hovertext=hv, hoverinfo="text"))
+    m = max(1e-9, float(max(tab[down_col].max(), tab[up_col].max()))) * 1.25
+    fig.update_layout(barmode="relative", bargap=0.35, showlegend=True, legend=dict(orientation="h", y=-0.12 if len(tab) < 10 else -0.06))
+    fig.update_yaxes(visible=True, tickmode="array", tickvals=y, ticktext=[f"{r['rank']}. {r.target}" for _, r in tab.iterrows()], showgrid=False, zeroline=False)
+    fig.update_xaxes(visible=True, showticklabels=True, range=[-m, m], zeroline=True, zerolinecolor="#333", showgrid=True, gridcolor="#eee",
+                     title=f"◀ {label_down}      {unit}      {label_up} ▶")
+    if caption_text:
+        fig.add_annotation(xref="paper", yref="paper", x=0, y=-0.22 if len(tab) < 10 else -0.12, showarrow=False, align="left", font=dict(size=10, color="#555"), text=caption_text)
+        fig.update_layout(margin=dict(b=120))
+    return fig
+
+
 # --------------------------------------------------------------------------- interference screen (ranked targets by impact on the CORE network)
 def interference_screen_figure(table_path, width=900, height=600, caption=True, label_top=25):
     """x = fraction of CORE TFs changed, y = total |delta| at TFs, size = direct entry points, fill = down_share (blue = TARGET inhibition
@@ -665,19 +689,22 @@ def interference_screen_figure(table_path, width=900, height=600, caption=True, 
     core = tab.attrs.get("core", "") if hasattr(tab, "attrs") else ""
     if not len(tab): return _base("interference screen: no targets scored", width, height)
     fig = _base(f"interference screen{(' on the ' + core + ' network') if core else ''}: {len(tab)} candidate targets", width, height)
+    nd_col = "net_direction" if "net_direction" in tab.columns else "down_share"
     def col(d):
         if pd.isna(d): return "#cfcfcf"
-        if d >= 0.7: return "#3a6fb0"
-        if d <= 0.3: return "#c0392b"
+        if nd_col == "down_share": d = -(2 * d - 1)
+        if d <= -0.4: return "#3a6fb0"
+        if d >= 0.4: return "#c0392b"
         return "#9a9a9a"
     size = 8 + 4 * tab.direct_entries.clip(0, 10)
     txt = [r.target if r["rank"] <= label_top else "" for _, r in tab.iterrows()]
     hv = [f"<b>{r.target}</b> rank {r['rank']}<br>TFs changed {r.tfs_changed} ({r.tfs_down}↓ {r.tfs_up}↑), index {r.flow_change_index}<br>|delta| at TFs {r.tf_delta_total}"
-          f"<br>direct entries {r.direct_entries}, entry edges {r.entry_edges}<br>genes {r.genes_down}↓ {r.genes_up}↑"
+          + (f" (down {r.tf_delta_down}, up {r.tf_delta_up}, net {r.net_tf_delta:+.2f})" if "net_tf_delta" in tab.columns else "")
+          + f"<br>direct entries {r.direct_entries}, entry edges {r.entry_edges}<br>genes {r.genes_down}↓ {r.genes_up}↑"
           + (f"<br>baseline z {r.baseline_z:+.2f}" if pd.notna(r.get("baseline_z", float("nan"))) else "") + f"<br>{r.top_tfs}" for _, r in tab.iterrows()]
     fig.add_trace(go.Scatter(x=tab.flow_change_index, y=tab.tf_delta_total, mode="markers+text", text=txt, textposition="top center", textfont=dict(size=10),
-                             marker=dict(size=size, color=[col(d) for d in tab.down_share], line=dict(color="#333", width=1)), hovertext=hv, hoverinfo="text", showlegend=False))
-    for name, c in [("mostly DOWN: inhibition silences CORE output", "#3a6fb0"), ("mostly UP: inhibition releases brakes", "#c0392b"), ("mixed", "#9a9a9a")]:
+                             marker=dict(size=size, color=[col(d) for d in tab[nd_col]], line=dict(color="#333", width=1)), hovertext=hv, hoverinfo="text", showlegend=False))
+    for name, c in [("net DOWN: inhibition silences CORE output", "#3a6fb0"), ("net UP: inhibition raises CORE output (brake release)", "#c0392b"), ("balanced / context-dependent", "#9a9a9a")]:
         fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers", marker=dict(size=10, color=c, line=dict(color="#333", width=1)), name=name))
     fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers", marker=dict(size=22, color="#fff", line=dict(color="#333", width=1)), name="size = direct entry points"))
     xmax = max(0.2, float(tab.flow_change_index.max()) * 1.2); ymax = max(0.5, float(tab.tf_delta_total.max()) * 1.2)

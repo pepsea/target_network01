@@ -233,7 +233,8 @@ def summarize_pathway_interference(p, n=12):
              f"shared {len(p.get('overlap_nodes', []))} nodes; {len(p.get('overlap_edges', []))} edges from the TARGET network into the CORE network",
              f"entry: {s['entry_points']} nodes receive {s['entry_edges']} edges from {p['target']}'s side",
              f"change: {s['nodes_changed']} nodes ({s['nodes_decreased']} down / {s['nodes_increased']} up); TFs {s['tfs_changed']}/{s['core_tfs']} "
-             f"({s['tfs_decreased']} down / {s['tfs_increased']} up); genes {s['genes_down']} down / {s['genes_up']} up; flow-change index {s['flow_change_index']}"]
+             f"({s['tfs_decreased']} down / {s['tfs_increased']} up; Σdelta down {s.get('tf_delta_down', 0)}, up {s.get('tf_delta_up', 0)}, net direction {s.get('net_direction', 0):+.2f}); "
+             f"genes {s['genes_down']} down / {s['genes_up']} up; flow-change index {s['flow_change_index']}"]
     if len(fc):
         tf = fc[(fc.is_tf) & (fc.direction != "unchanged")].head(n)
         if len(tf): lines.append("TFs most changed: " + ", ".join(f"{r.node}({'↓' if r.delta < 0 else '↑'}{abs(r.delta):.2f})" for r in tf.itertuples()))
@@ -261,6 +262,19 @@ def interference_screen_figure(x, **kw):
     tab = x["table"] if isinstance(x, dict) else x
     if isinstance(x, dict): tab.attrs["core"] = x.get("core", "")
     return plots.interference_screen_figure(tab, **kw)
+
+
+def direction_figure(x, **kw):
+    """Diverging bars of the direction of change per candidate: for an interference screen (Σ TF decreases vs increases on inhibition)
+    or a cross-talk screen (antagonistic vs synergistic edges + endpoints). x = result dict of either screen."""
+    from . import plots
+    tab = x["table"].copy(); core = x.get("core", "")
+    if "tf_delta_down" in tab.columns:
+        return plots.direction_bars_figure(tab, "tf_delta_down", "tf_delta_up", "CORE TF output DOWN (silenced)", "CORE TF output UP (brake release)",
+                                           f"direction of change in the {core} network when each candidate is inhibited", unit="Σ |delta| at TFs", extra_cols=("tfs_down", "tfs_up", "net_direction", "baseline_z"), **kw)
+    tab["_ant"] = tab.ant_edges + tab.ant_endpoints; tab["_syn"] = tab.syn_edges + tab.syn_endpoints
+    return plots.direction_bars_figure(tab, "_ant", "_syn", "antagonistic (opposes the core gene)", "synergistic (same direction)",
+                                       f"direction of cross-talk with {core} per candidate", unit="interference edges + shared endpoints", extra_cols=("net_direction", "tf_enrichment", "baseline_z"), **kw)
 
 
 def screen_crosstalk(core, targets, **options):

@@ -90,6 +90,7 @@ def interference_flow(G, core_df, core, target, target_df, genes_df=None, max_de
     edges = pd.DataFrame(entry_edges)
     if len(edges): edges = edges.reindex(edges.entry_strength.abs().sort_values(ascending=False).index).reset_index(drop=True)
     n_tf = int(nodes.is_tf.sum()); ch = nodes[(nodes.is_tf) & (nodes.direction != "unchanged")]
+    tfd = nodes[nodes.is_tf].delta; d_down = float(-tfd[tfd < 0].sum()); d_up = float(tfd[tfd > 0].sum())
     summary = dict(core=core, target=target, core_nodes=N - 1, core_tfs=n_tf, entry_points=len(entry), entry_edges=len(edges),
                    nodes_changed=int((nodes.direction != "unchanged").sum()), nodes_decreased=int((nodes.direction == "decreased").sum()),
                    nodes_increased=int((nodes.direction == "increased").sum()), tfs_changed=len(ch),
@@ -97,6 +98,8 @@ def interference_flow(G, core_df, core, target, target_df, genes_df=None, max_de
                    genes_changed=len(genes), genes_down=int((genes.direction == "down").sum()) if len(genes) else 0,
                    genes_up=int((genes.direction == "up").sum()) if len(genes) else 0,
                    flow_change_index=round(len(ch) / n_tf, 3) if n_tf else 0.0,
+                   tf_delta_down=round(d_down, 3), tf_delta_up=round(d_up, 3), net_tf_delta=round(d_up - d_down, 3),
+                   net_direction=round((d_up - d_down) / (d_up + d_down), 2) if (d_up + d_down) else 0.0,
                    target_in_core_network=target in cset)
     return dict(nodes=nodes, genes=genes, edges=edges, summary=summary)
 
@@ -109,7 +112,9 @@ def screen_targets(G, core, core_df, core_genes, targets, tfs, max_depth=5, min_
       flow_change_index  fraction of CORE's TFs whose activity changes
       tf_delta_total     sum of |delta| over CORE's TFs (magnitude of the transcriptional change; relative units)
       direct_entries     CORE nodes receiving a direct edge from TARGET's side (mechanistic footprint)
-      down_share         share of changed TFs that go DOWN (1 = TARGET inhibition silences CORE output; 0 = it releases brakes)
+      tf_delta_down/up   signed parts of that total (sum of decreases / sum of increases at the TFs); net_tf_delta = up - down;
+                         net_direction = (up - down)/(up + down): -1 = inhibition silences CORE output, +1 = it raises it (brake release)
+      down_share         share of changed TFs that go DOWN
       baseline_z         z of tf_delta_total vs degree-matched random genes run against the same CORE
       composite          mean percentile rank of flow_change_index, tf_delta_total and direct_entries (baseline_z breaks ties)
     """
@@ -126,10 +131,13 @@ def screen_targets(G, core, core_df, core_genes, targets, tfs, max_depth=5, min_
         res = interference_flow(G, core_df, core, X, dX, genes_df=core_genes, max_depth=max_depth, hub_strength=hub_strength)
         s_ = res["summary"]; nd = res["nodes"]; tf = nd[nd.is_tf]
         ch = tf[tf.direction != "unchanged"]
+        d_down = float(-tf.delta[tf.delta < 0].sum()); d_up = float(tf.delta[tf.delta > 0].sum())
         row = dict(target=X, target_nodes=len(dX), entry_points=s_["entry_points"], entry_edges=s_["entry_edges"],
                    direct_entries=int((nd.entry == "direct").sum()), nodes_changed=s_["nodes_changed"],
                    tfs_changed=s_["tfs_changed"], tfs_down=s_["tfs_decreased"], tfs_up=s_["tfs_increased"], flow_change_index=s_["flow_change_index"],
-                   tf_delta_total=round(float(tf.delta.abs().sum()), 3), down_share=round(s_["tfs_decreased"] / len(ch), 2) if len(ch) else float("nan"),
+                   tf_delta_total=round(d_down + d_up, 3), tf_delta_down=round(d_down, 3), tf_delta_up=round(d_up, 3), net_tf_delta=round(d_up - d_down, 3),
+                   net_direction=round((d_up - d_down) / (d_up + d_down), 2) if (d_up + d_down) else float("nan"),
+                   down_share=round(s_["tfs_decreased"] / len(ch), 2) if len(ch) else float("nan"),
                    genes_down=s_["genes_down"], genes_up=s_["genes_up"], target_on_core_network=s_["target_in_core_network"],
                    top_tfs=", ".join(f"{r.node}{'↓' if r.delta < 0 else '↑'}" for r in ch.head(6).itertuples()))
         return row, res

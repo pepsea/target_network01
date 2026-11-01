@@ -271,6 +271,12 @@ def run_crosstalk_screen(args):
     if len(tab):
         from targetnet import plots as P
         P.screen_figure(tab).write_html(os.path.join(out, "screen.html"), include_plotlyjs="cdn")
+        tab["_ant"] = tab.ant_edges + tab.ant_endpoints; tab["_syn"] = tab.syn_edges + tab.syn_endpoints
+        P.direction_bars_figure(tab, "_ant", "_syn", "antagonistic (opposes the core gene)", "synergistic (same direction as the core gene)",
+                                f"direction of cross-talk with {C} per candidate", unit="interference edges + shared endpoints",
+                                caption_text="Per candidate: blue = antagonistic edges/endpoints (the candidate opposes the core gene there), red = synergistic. Table: screen.csv (syn_edges, ant_edges, syn_endpoints, ant_endpoints, net_direction).",
+                                extra_cols=("net_direction", "tf_enrichment", "baseline_z")).write_html(os.path.join(out, "screen_direction.html"), include_plotlyjs="cdn")
+        tab = tab.drop(columns=["_ant", "_syn"])
         print(f"\n[screen] ranked {len(tab)} targets -> {out}/screen.csv")
         print(tab.head(15)[["rank", "target", "interference_score", "n_interference", "tf_enrichment", "tf_p", "dependency", "net_direction", "baseline_z", "composite"]].to_string(index=False))
     return tab
@@ -337,7 +343,8 @@ def run_pathway_interference(args):
     print(f"\n[pathway] {C} network: {s_['core_nodes']} nodes, {s_['core_tfs']} TFs -> {root}/downstream/ and {out}/cell_flow.html; {X} network -> {root}/downstream_{X}/ and {out}/cell_flow_target.html")
     print(f"[interference] inhibiting {X}: {s_['entry_points']} entry points ({s_['entry_edges']} edges from {X}'s side); "
           f"{s_['nodes_changed']} nodes change ({s_['nodes_decreased']} down / {s_['nodes_increased']} up); TFs {s_['tfs_changed']}/{s_['core_tfs']} "
-          f"({s_['tfs_decreased']} down / {s_['tfs_increased']} up); genes {s_['genes_down']} down / {s_['genes_up']} up; flow-change index {s_['flow_change_index']}"
+          f"({s_['tfs_decreased']} down / {s_['tfs_increased']} up; Σdelta down {s_['tf_delta_down']}, up {s_['tf_delta_up']}, net direction {s_['net_direction']:+.2f}); "
+          f"genes {s_['genes_down']} down / {s_['genes_up']} up; flow-change index {s_['flow_change_index']}"
           + (f"; {X} is itself on the {C} network" if s_['target_in_core_network'] else ""))
     if len(res["nodes"]):
         print(res["nodes"][res["nodes"].direction != "unchanged"].head(12)[["node", "hops_from_core", "is_tf", "delta", "direction", "entry", "via"]].to_string(index=False))
@@ -364,8 +371,12 @@ def run_interference_screen(args):
     if len(tab):
         from targetnet import plots as P
         P.interference_screen_figure(tab).write_html(os.path.join(out, "interference_screen.html"), include_plotlyjs="cdn")
+        P.direction_bars_figure(tab, "tf_delta_down", "tf_delta_up", "CORE TF output DOWN (silenced)", "CORE TF output UP (brake release)",
+                                f"direction of change in the {C} network when each candidate is inhibited", unit="Σ |delta| at TFs",
+                                caption_text="Per candidate: blue = sum of TF decreases, red = sum of TF increases when it is inhibited. Both large = context-dependent (feedback). Table: interference_screen.csv (tf_delta_down / tf_delta_up / net_tf_delta / net_direction).",
+                                extra_cols=("tfs_down", "tfs_up", "net_direction", "baseline_z")).write_html(os.path.join(out, "interference_direction.html"), include_plotlyjs="cdn")
         print(f"\n[iscreen] ranked {len(tab)} targets -> {out}/interference_screen.csv")
-        print(tab.head(15)[["rank", "target", "tfs_changed", "tfs_down", "tfs_up", "flow_change_index", "tf_delta_total", "direct_entries", "down_share", "baseline_z", "composite"]].to_string(index=False))
+        print(tab.head(15)[["rank", "target", "tfs_changed", "tfs_down", "tfs_up", "flow_change_index", "tf_delta_down", "tf_delta_up", "net_direction", "direct_entries", "baseline_z", "composite"]].to_string(index=False))
     return tab
 
 
