@@ -142,10 +142,11 @@ def _node_trace(fig, nodes, pos, rad, fill, line_col, hover, name, line_w=1.5, d
         return
     values = values or {}; vmax = max([abs(v) for v in values.values()] or [0])
     hi = [n for n in nodes if n["id"] in focus or n.get("cls") == "seed"]; lo = [n for n in nodes if n not in hi]
-    if lo:
-        fig.add_trace(go.Scatter(x=[pos[n["id"]][0] for n in lo], y=[pos[n["id"]][1] for n in lo], mode="markers",
-                                 marker=dict(size=6, color="#d5d5d5", line=dict(width=0)), hovertext=[hover(n) for n in lo], hoverinfo="text",
-                                 name=f"{name} (not in focus list)", showlegend=show))
+    if lo:   # context nodes: small grey circles, still labelled in small grey text so the pathway stays readable
+        fig.add_trace(go.Scatter(x=[pos[n["id"]][0] for n in lo], y=[pos[n["id"]][1] for n in lo], mode="markers+text",
+                                 text=[n["id"] for n in lo], textposition="middle right", textfont=dict(size=8, color="#8a8a8a"),
+                                 marker=dict(size=[max(7, rad(n["id"]) * 4) for n in lo], color="#c4c4c4", line=dict(color="#9a9a9a", width=0.8)),
+                                 hovertext=[hover(n) for n in lo], hoverinfo="text", name=f"{name} (not in focus list)", showlegend=show))
     if hi:
         col = [(_value_colour(values[n["id"]], vmax) if n["id"] in values else fill(n)) for n in hi]
         fig.add_trace(go.Scatter(x=[pos[n["id"]][0] for n in hi], y=[pos[n["id"]][1] for n in hi], mode="markers+text",
@@ -162,7 +163,7 @@ def _focus_edge_style(focus):
     def col(e):
         a, b = e.get("source", e.get("from_node")), e.get("target", e.get("to_node"))
         base = COL["amb"] if e.get("effect", 1) == 0 else COL["edge"]
-        return base if (a in focus or b in focus) else "#e3e3e3"
+        return base if (a in focus or b in focus) else "#c9c9c9"
     return col
 
 
@@ -284,7 +285,7 @@ def crosstalk_figure(json_path, width=1050, height=700, max_nodes=200, focus=Non
     s = X["summary"]
     fig = _base((f"(top {max_nodes} of {len(X['nodes'])} nodes) " if capped else "") + f"Cross-talk: does {X['goi']} influence the {X['causal']} pathway?  index {s['crosstalk_index']} · "
                 f"interference edges {s['n_interference_edges']} · endpoints syn/ant/mixed {s['synergistic']}/{s['antagonistic']}/{s['mixed']}", width, height)
-    _edge_traces(fig, X["edges"], pos, rad, color_fn=(lambda e: "#bbbbbb") if focus is None else (lambda e: "#bbbbbb" if (e["source"] in fset or e["target"] in fset) else "#eeeeee"),
+    _edge_traces(fig, X["edges"], pos, rad, color_fn=(lambda e: "#bbbbbb") if focus is None else (lambda e: "#999999" if (e["source"] in fset or e["target"] in fset) else "#d4d4d4"),
                  dash_fn=lambda e: "dot" if e.get("effect", 1) == 0 else "solid", width=0.8)
     inter = [dict(source=e["from_node"], target=e["to_node"], effect=e["edge_effect"], agreement=e["agreement"], mech=e.get("mechanism", ""), res=e.get("residue", "")) for e in X["interference"]]
     _edge_traces(fig, inter, pos, rad, color_fn=lambda e: COL["syn"] if e["agreement"] == "synergistic" else COL["ant"] if e["agreement"] == "antagonistic" else COL["mix"],
