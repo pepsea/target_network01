@@ -4,7 +4,7 @@ YAML configuration: where each database lives and whether downloads are allowed.
 Search order for the config file:
   1. explicit path (CLI --config / api config=)
   2. $TARGETNET_CONFIG
-  3. ./target_net.yaml
+  3. ./target_net.yaml, or target_net.yaml in any parent folder (notebooks live in notebooks/)
   4. ~/.target_net.yaml
   5. built-in defaults (everything downloaded on demand into cache_dir)
 
@@ -47,8 +47,19 @@ def _merge(base, over):
     return out
 
 
+def _upward(name, start=None):
+    """target_net.yaml in the current folder or any parent (so notebooks in notebooks/ find the project-root file)."""
+    d = os.path.abspath(start or os.getcwd())
+    while True:
+        c = os.path.join(d, name)
+        if os.path.exists(c): return c
+        nd = os.path.dirname(d)
+        if nd == d: return None
+        d = nd
+
+
 def load_config(path=None):
-    cands = [path, os.environ.get("TARGETNET_CONFIG"), "target_net.yaml", os.path.expanduser("~/.target_net.yaml")]
+    cands = [path, os.environ.get("TARGETNET_CONFIG"), _upward("target_net.yaml"), os.path.expanduser("~/.target_net.yaml")]
     used = next((c for c in cands if c and os.path.exists(os.path.expanduser(c))), None)
     cfg = _merge(DEFAULTS, yaml.safe_load(open(os.path.expanduser(used))) or {}) if used else copy.deepcopy(DEFAULTS)
     for db in cfg["databases"].values():

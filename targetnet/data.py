@@ -28,9 +28,11 @@ def _local(name, key="path"):
     """Local file for a database if configured and present; otherwise None (download if allowed, else error)."""
     p = _cfgmod.db(CFG, name, key)
     if p and os.path.exists(p): return p
-    if p: print(f"[config] {name}: configured path not found: {p}")
+    if p:   # a path was configured but is wrong: stop, never silently download something else
+        raise SystemExit(f"[config] {name}: configured path not found: {p}\n        (config file: {CFG.get('_file')}; fix databases.{name}.{key})")
     if not CFG.get("allow_download", True):
         raise SystemExit(f"[config] {name}: no local file and allow_download is false (set databases.{name}.{key} in the YAML)")
+    print(f"[config] {name}: no local path configured -> downloading into {CACHE} (config file: {CFG.get('_file') or 'none found'})")
     return None
 HEADERS = {"User-Agent": "target-net/0.2"}
 REACTOME_FI_URL = "https://reactome.org/download/tools/ReatomeFIs/FIsInGene_070323_with_annotations.txt.zip"
@@ -51,8 +53,12 @@ def cached_text(key, url, params=None, sleep=0.25, binary=False):
     fn = _cache_path(key, ".bin" if binary else ".txt")
     if os.path.exists(fn):
         return open(fn, "rb" if binary else "r").read()
-    r = requests.get(url, params=params, headers=HEADERS, timeout=600)
-    r.raise_for_status(); time.sleep(sleep)
+    try:
+        r = requests.get(url, params=params, headers=HEADERS, timeout=600); r.raise_for_status()
+    except requests.RequestException as e:
+        raise SystemExit(f"[download] could not fetch {url.split('?')[0]} ({e.__class__.__name__}). "
+                         f"Set the local path in target_net.yaml (config file used: {CFG.get('_file') or 'none found'}) or check the network.")
+    time.sleep(sleep)
     data = r.content if binary else r.text
     open(fn, "wb" if binary else "w").write(data)
     return data
