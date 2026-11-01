@@ -154,8 +154,9 @@ def _cap_nodes(nodes, edges, max_nodes, keep_ids=()):
 
 
 def parse_focus(focus):
-    """focus: None | list/set of gene symbols | path to a text file (one symbol per line, optional 2nd column = value)
-       | dict {gene: value} | pandas Series (index = gene). Returns (set_of_genes, {gene: value} or {})."""
+    """focus: None | plain text ("GSK3B, FOXO3 MTOR" or one gene per line, optional value after a gene: "GSK3B -1.8")
+       | path to such a text file | list/set of symbols | dict {gene: value} | pandas Series (index = gene).
+       Returns (set_of_genes, {gene: value} or {})."""
     if focus is None: return set(), {}
     try:
         import pandas as pd
@@ -164,13 +165,19 @@ def parse_focus(focus):
     except ImportError:
         pass
     if isinstance(focus, str):
-        vals = {}
-        for line in open(focus):
-            parts = line.replace(",", "\t").split("\t")
-            g = parts[0].strip().upper()
-            if not g or g.startswith("#"): continue
-            try: vals[g] = float(parts[1]) if len(parts) > 1 and parts[1].strip() else None
-            except ValueError: vals[g] = None
+        import os, re
+        text = open(os.path.expanduser(focus)).read() if os.path.exists(os.path.expanduser(focus)) else focus
+        # plain text: genes separated by newlines / commas / spaces / semicolons; an optional number after a gene is its value
+        vals, last = {}, None
+        for tok in re.split(r"[\s,;]+", text):
+            if not tok or tok.startswith("#"): continue
+            try:
+                v = float(tok)
+                if last is not None: vals[last] = v
+                continue
+            except ValueError:
+                pass
+            last = tok.strip().upper(); vals.setdefault(last, None)
         return set(vals), {g: v for g, v in vals.items() if v is not None}
     if isinstance(focus, dict):
         d = {str(k).upper(): v for k, v in focus.items()}
@@ -187,12 +194,12 @@ def _value_colour(v, vmax):
     return f"rgb({r},{g},{b})"
 
 
-def _node_trace(fig, nodes, pos, rad, fill, line_col, hover, name, line_w=1.5, dash=None, show=True, focus=None, values=None):
+def _node_trace(fig, nodes, pos, rad, fill, line_col, hover, name, line_w=1.5, dash=None, show=True, focus=None, values=None, label_size=10):
     """focus = set of highlighted genes (None = no focus mode). In focus mode non-focus nodes are small grey dots without labels."""
     if not nodes: return
     if focus is None:
         fig.add_trace(go.Scatter(x=[pos[n["id"]][0] for n in nodes], y=[pos[n["id"]][1] for n in nodes], mode="markers+text",
-                                 text=[n["id"] for n in nodes], textposition="middle right", textfont=dict(size=10),
+                                 text=[n["id"] for n in nodes], textposition="middle right", textfont=dict(size=label_size),
                                  marker=dict(size=[rad(n["id"]) * 7 for n in nodes], color=[fill(n) for n in nodes],
                                              line=dict(color=[line_col(n) for n in nodes], width=line_w)),
                                  hovertext=[hover(n) for n in nodes], hoverinfo="text", name=name, showlegend=show))
@@ -327,7 +334,7 @@ def cell_map_figure(json_path, width=900, height=700, max_nodes=150, focus=None,
 
 
 # --------------------------------------------------------------------------- cross-talk (three lanes)
-def crosstalk_figure(json_path, width=1050, height=700, max_nodes=120, max_edges=40, focus=None, caption=True):
+def crosstalk_figure(json_path, width=1100, height=820, max_nodes=120, max_edges=40, focus=None, caption=True):
     """Draws the top `max_edges` interference edges (ranked by proximity to both genes) and the nodes around them."""
     X = _load(json_path); fset, fvals = parse_focus(focus); fset_or_none = fset if focus is not None else None
     n_all_edges = len(X["interference"])
@@ -340,11 +347,17 @@ def crosstalk_figure(json_path, width=1050, height=700, max_nodes=120, max_edges
     groups = defaultdict(list)
     for n in nodes: groups[(n["lane"], n.get("hops_x", 0) if n["lane"] == "goi" else n.get("hops_c", 0))].append(n)
     pos = {}
+    band = 86 / max(max_hop, 1)                      # vertical space per hop
     for (lane, hp), arr in groups.items():
-        arr.sort(key=lambda n: -n["score"]); span = 26 if lane != "shared" else 24
+        arr.sort(key=lambda n: -n["score"])
+        span = 26 if lane != "shared" else 24
+        ncols = 1 if len(arr) == 1 else min(4, len(arr))         # grid: at most 4 names per row, so labels do not collide
+        row_h = min(4.5, (band - 4) / max(1, math.ceil(len(arr) / ncols)))
         for i, n in enumerate(arr):
-            x = lane_x[lane] if len(arr) == 1 else lane_x[lane] - span / 2 + span * (i + 0.5) / len(arr)
-            pos[n["id"]] = (x, 94 - 86 * (hp or 0) / max(max_hop, 1) + (1.5 if i % 2 else -1.5))
+            r, c = divmod(i, ncols)
+            x = lane_x[lane] if ncols == 1 else lane_x[lane] - span / 2 + span * (c + 0.5) / ncols
+            y = 94 - band * (hp or 0) - r * row_h
+            pos[n["id"]] = (x, y)
     rad = lambda nid: 2.0 if byid[nid]["cls"] == "seed" else 0.9 + 1.2 * byid[nid]["score"]
     s = X["summary"]
     enr = f"TF-overlap enrichment {s.get('tf_enrichment')} (p={s.get('tf_overlap_p', float('nan')):.1g})" if s.get("tf_enrichment") is not None else f"index {s['crosstalk_index']}"
@@ -365,7 +378,7 @@ def crosstalk_figure(json_path, width=1050, height=700, max_nodes=120, max_edges
                        + (f"<br>hops from {X['goi']}: {n['hops_x']}" if n.get("hops_x") is not None else "") + (f"<br>{n['agreement']}" if n.get("agreement") else ""))
     for lane, name in [("causal", f"{X['causal']} pathway"), ("shared", "shared"), ("goi", f"{X['goi']} pathway")]:
         _node_trace(fig, [n for n in nodes if n["lane"] == lane and n["cls"] != "seed"], pos, rad, lambda n, l=lane: COL[l],
-                    lambda n: "#111" if n.get("is_endpoint") else "rgba(0,0,0,0)", hover, name, line_w=1.5, focus=fset_or_none, values=fvals)
+                    lambda n: "#111" if n.get("is_endpoint") else "rgba(0,0,0,0)", hover, name, line_w=1.5, focus=fset_or_none, values=fvals, label_size=9)
         fig.add_annotation(x=lane_x[lane], y=99, text=name.upper(), showarrow=False, font=dict(size=11, color="#888"))
     _node_trace(fig, [n for n in nodes if n["cls"] == "seed"], pos, rad, lambda n: COL["seed"], lambda n: "#111", hover, "seed genes", focus=fset_or_none, values=fvals)
     fig.update_xaxes(range=[0, 100]); fig.update_yaxes(range=[0, 102])
