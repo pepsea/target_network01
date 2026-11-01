@@ -39,8 +39,9 @@ def _base(title, w=1000, h=650):
     return fig
 
 
-def _edge_traces(fig, edges, pos, rad, color_fn=None, dash_fn=None, name="edge", width=1.2):
-    """Edges as curved line segments (one trace per style for speed); arrow / bar heads as annotations."""
+def _edge_traces(fig, edges, pos, rad, color_fn=None, dash_fn=None, name="edge", width=1.2, head_px=7):
+    """Edges as cubic S-curves, one line trace per (colour, dash) style; arrow/bar heads as ONE rotated-marker trace.
+    (No per-edge annotations: those make Plotly quadratic and take minutes for a few thousand edges.)"""
     groups = defaultdict(list)
     for e in edges:
         s, t = e["source"], e["target"]
@@ -48,25 +49,45 @@ def _edge_traces(fig, edges, pos, rad, color_fn=None, dash_fn=None, name="edge",
         col = color_fn(e) if color_fn else (COL["amb"] if e.get("effect", 1) == 0 else COL["edge"])
         dash = dash_fn(e) if dash_fn else ("dot" if e.get("effect", 1) == 0 else "solid")
         groups[(col, dash)].append(e)
+    hx, hy, hang, hsym, hcol = [], [], [], [], []
+    T = [i / 12 for i in range(13)]
     for (col, dash), es in groups.items():
         xs, ys = [], []
         for e in es:
             (x0, y0), (x1, y1) = pos[e["source"]], pos[e["target"]]
-            # shorten at the target so the head sits on the node edge
-            dx, dy = x1 - x0, y1 - y0; dd = math.hypot(dx, dy) or 1; r = rad(e["target"]) * 0.55
+            dx, dy = x1 - x0, y1 - y0; dd = math.hypot(dx, dy) or 1; r = rad(e["target"]) * 0.75
             x1e, y1e = x1 - dx / dd * r, y1 - dy / dd * r
             mx = (x0 + x1e) / 2
-            # cubic bezier with horizontal tangents (S-curve), sampled in 12 points
-            for i in range(13):
-                tt = i / 12; u = 1 - tt
+            px = py = None
+            for tt in T:
+                u = 1 - tt
                 bx = u**3 * x0 + 3 * u**2 * tt * mx + 3 * u * tt**2 * mx + tt**3 * x1e
                 by = u**3 * y0 + 3 * u**2 * tt * y0 + 3 * u * tt**2 * y1e + tt**3 * y1e
+                if tt == T[-2]: px, py = bx, by
                 xs.append(bx); ys.append(by)
             xs.append(None); ys.append(None)
-            fig.add_annotation(x=x1e, y=y1e, ax=xs[-3], ay=ys[-3], xref="x", yref="y", axref="x", ayref="y", showarrow=True,
-                               arrowhead=2 if e.get("effect", 1) >= 0 else 7, arrowsize=(1.6 if e.get("effect", 1) >= 0 else 1.1) / max(1.0, width / 1.2),
-                               arrowwidth=max(width, 1.2), arrowcolor=col, text="")
+            # head: angle of the last curve segment (plotly marker.angle is clockwise from "up")
+            ang = math.degrees(math.atan2(x1e - px, y1e - py))
+            hx.append(x1e); hy.append(y1e); hang.append(ang)
+            hsym.append("triangle-up" if e.get("effect", 1) >= 0 else "line-ew"); hcol.append(col)
         fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines", line=dict(color=col, width=width, dash=dash), hoverinfo="skip", name=name, showlegend=False))
+    if hx:
+        fig.add_trace(go.Scatter(x=hx, y=hy, mode="markers", hoverinfo="skip", showlegend=False,
+                                 marker=dict(symbol=hsym, angle=hang, size=head_px + (2 if width > 2 else 0), color=hcol,
+                                             line=dict(width=max(1.5, width), color=hcol))))
+
+
+def _cap_nodes(nodes, edges, max_nodes, keep_ids=()):
+    """Keep the seed, then the best-scoring nodes up to max_nodes (endpoints first); drop edges to removed nodes."""
+    if len(nodes) <= max_nodes: return nodes, edges, False
+    keep = {n["id"] for n in nodes if n.get("cls") == "seed" or n["id"] in keep_ids}
+    ranked = sorted([n for n in nodes if n["id"] not in keep], key=lambda n: (not n.get("is_endpoint", False), -n.get("score", 0)))
+    for n in ranked:
+        if len(keep) >= max_nodes: break
+        keep.add(n["id"])
+    nodes = [n for n in nodes if n["id"] in keep]
+    edges = [e for e in edges if e.get("source", e.get("from_node")) in keep and e.get("target", e.get("to_node")) in keep]
+    return nodes, edges, True
 
 
 def _node_trace(fig, nodes, pos, rad, fill, line_col, hover, name, line_w=1.5, dash=None, show=True):
@@ -79,9 +100,12 @@ def _node_trace(fig, nodes, pos, rad, fill, line_col, hover, name, line_w=1.5, d
 
 
 # --------------------------------------------------------------------------- flow (upstream / downstream)
-def flow_figure(json_path, width=1000, height=650):
+def flow_figure(json_path, width=1000, height=650, max_nodes=150):
     F = _load(json_path)
-    nodes = F["nodes"]; byid = {n["id"]: n for n in nodes}
+    nodes, edges, capped = _cap_nodes(F["nodes"], F["edges"], max_nodes)
+    F["edges"] = edges; byid = {n["id"]: n for n in nodes}
+    if capped: F["subtitle"] = f"showing top {max_nodes} of {len(F['nodes'])} nodes by path score (full table in CSV / D3 view). " + F.get("subtitle", "")
+    F["genes"] = [g for g in F.get("genes", []) if g["tf"] in byid]
     # columns: intermediates by hop, endpoints in one final column; upstream mode is drawn right-to-left
     max_mid = max([n["hops"] for n in nodes if not n.get("is_endpoint")] or [0])
     for n in nodes: n["col"] = max_mid + 1 if n.get("is_endpoint") else n["hops"]
@@ -99,7 +123,7 @@ def flow_figure(json_path, width=1000, height=650):
         step = 90 / max(len(arr), 1)
         for i, n in enumerate(arr): pos[n["id"]] = (col_x(c), 95 - step * (i + 0.5))
     rad = lambda nid: 2.2 if byid[nid]["cls"] == "seed" else 1.0 + 1.6 * byid[nid]["score"]
-    fig = _base(f"{F['mode']} pathway of {F['seed']}  —  {F.get('subtitle', '')}", width, height)
+    fig = _base(f"{F['mode']} pathway of {F['seed']}  —  {F.get('subtitle', '')}", width, max(height, 14 * max(len(a) for a in [[n for n in nodes if n['col'] == c] for c in range(ncol)])))
     _edge_traces(fig, F["edges"], pos, rad)
     hover = lambda n: (f"<b>{n['id']}</b><br>hops {n['hops']} · path score {n['score']:.2f}<br>net sign: "
                        f"{'activated' if n['sign'] == 1 else 'inhibited' if n['sign'] == -1 else 'mixed'}"
@@ -134,8 +158,10 @@ _ZONES = dict(membrane=(50, 50, 46, 50), cytosol=(50, 50, 22, 32), nucleus=(50, 
               mitochondrion=(80, 32, 0, 9), ER_golgi=(76, 74, 0, 9))   # cx, cy, r_inner, r_outer
 
 
-def cell_map_figure(json_path, width=900, height=700):
-    N = _load(json_path); nodes = N["nodes"]; byid = {n["id"]: n for n in nodes}
+def cell_map_figure(json_path, width=900, height=700, max_nodes=150):
+    N = _load(json_path); nodes, edges, capped = _cap_nodes(N["nodes"], N["edges"], max_nodes); N["edges"] = edges
+    byid = {n["id"]: n for n in nodes}
+    if capped: N["mode"] = f"{N.get('mode', '')} (top {max_nodes} of {len(N['nodes'])} nodes)"
     pos = {}
     for comp in set(n["compartment"] for n in nodes):
         cx, cy, ri, ro = _ZONES.get(comp, _ZONES["cytosol"]); arr = [n for n in nodes if n["compartment"] == comp]
@@ -167,8 +193,11 @@ def cell_map_figure(json_path, width=900, height=700):
 
 
 # --------------------------------------------------------------------------- cross-talk (three lanes)
-def crosstalk_figure(json_path, width=1050, height=700):
-    X = _load(json_path); nodes = X["nodes"]; byid = {n["id"]: n for n in nodes}
+def crosstalk_figure(json_path, width=1050, height=700, max_nodes=200):
+    X = _load(json_path)
+    keep = {e["from_node"] for e in X["interference"]} | {e["to_node"] for e in X["interference"]}
+    nodes, edges, capped = _cap_nodes(X["nodes"], X["edges"], max_nodes, keep_ids=keep); X["edges"] = edges
+    byid = {n["id"]: n for n in nodes}
     lane_x = dict(causal=18, shared=50, goi=82)
     max_hop = max([max(n.get("hops_c", 0) or 0, n.get("hops_x", 0) or 0) for n in nodes] or [1])
     groups = defaultdict(list)
@@ -181,7 +210,7 @@ def crosstalk_figure(json_path, width=1050, height=700):
             pos[n["id"]] = (x, 94 - 84 * (hp or 0) / (max_hop + 1) + (1.5 if i % 2 else -1.5))
     rad = lambda nid: 2.0 if byid[nid]["cls"] == "seed" else 0.9 + 1.2 * byid[nid]["score"]
     s = X["summary"]
-    fig = _base(f"Cross-talk: does {X['goi']} influence the {X['causal']} pathway?  index {s['crosstalk_index']} · "
+    fig = _base((f"(top {max_nodes} of {len(X['nodes'])} nodes) " if capped else "") + f"Cross-talk: does {X['goi']} influence the {X['causal']} pathway?  index {s['crosstalk_index']} · "
                 f"interference edges {s['n_interference_edges']} · endpoints syn/ant/mixed {s['synergistic']}/{s['antagonistic']}/{s['mixed']}", width, height)
     _edge_traces(fig, X["edges"], pos, rad, color_fn=lambda e: "#bbbbbb", dash_fn=lambda e: "dot" if e.get("effect", 1) == 0 else "solid", width=0.8)
     inter = [dict(source=e["from_node"], target=e["to_node"], effect=e["edge_effect"], agreement=e["agreement"], mech=e.get("mechanism", ""), res=e.get("residue", "")) for e in X["interference"]]
