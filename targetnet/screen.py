@@ -13,8 +13,8 @@ Score axes (all per target X, higher = stronger cross-talk with C):
                       X reaching a large share of all TFs.
   dependency          1 - |D(C without X)| / |D(C)|: fraction of C's downstream pathway that disappears when X is removed.
                       This is the "bypass" question: if C's output needs X, inhibiting X cuts C's signal.
-  net_direction       (synergistic - antagonistic) / (synergistic + antagonistic) over confidence-gated interference edges
-                      and shared endpoints: +1 = X pushes C's pathway the same way, -1 = X opposes it. Not part of the rank
+  net_direction       (syn - ant) / (syn + ant) over interference edges (syn_edges / ant_edges) AND confidence-gated shared
+                      endpoints (syn_endpoints / ant_endpoints; these are the counts research_crosstalk prints): +1 = X pushes C's pathway the same way, -1 = X opposes it. Not part of the rank
                       (direction is a property, not a magnitude) but reported next to it.
   baseline_z          z-score of interference_score against N degree-matched random genes run against the same C
                       (the automatic baseline). Answers "is this more than any gene of similar connectivity would show?".
@@ -30,6 +30,8 @@ from . import walk as Wk
 
 def _light_downstream(G, gene, tfs, regulon, max_depth, min_score, hub, exclude=(), max_targets=None):
     """Walk + regulon only (no annotation layers). Returns (nodes_df, genes_df); empty frames if the seed cannot start."""
+    from . import data as D
+    if gene in G: Wk.prepare_seed(G, gene, "down", D.CFG, D.REACTOME_DIRECTED)   # identical seed handling to research_crosstalk
     H = G
     if exclude:
         H = G.copy(); H.remove_nodes_from([e for e in exclude if e in H])
@@ -46,11 +48,14 @@ def _interference_score(inter_df):
 
 
 def _direction(res):
+    """Direction over BOTH evidence kinds: interference edges (X-side node -> C-pathway node) and shared endpoints (TFs / genes).
+    Returned separately so the numbers can be matched with research_crosstalk, whose summary counts endpoints only."""
     s = res["summary"]; inter = res["interference"]
-    syn = s.get("synergistic", 0); ant = s.get("antagonistic", 0)
-    if len(inter):
-        syn += int((inter.agreement == "synergistic").sum()); ant += int((inter.agreement == "antagonistic").sum())
-    return (syn - ant) / (syn + ant) if (syn + ant) else 0.0, syn, ant
+    syn_e = int((inter.agreement == "synergistic").sum()) if len(inter) else 0
+    ant_e = int((inter.agreement == "antagonistic").sum()) if len(inter) else 0
+    syn_p, ant_p = s.get("synergistic", 0), s.get("antagonistic", 0)
+    syn, ant = syn_e + syn_p, ant_e + ant_p
+    return (syn - ant) / (syn + ant) if (syn + ant) else 0.0, syn_e, ant_e, syn_p, ant_p
 
 
 def degree_matched_random(G, gene, n, rng, exclude=(), tol=0.5):
@@ -85,14 +90,14 @@ def screen(G, core, targets, tfs, regulon, max_depth=3, min_score=0.3, hub=0.25,
         if len(dX) == 0:
             return None, None
         res = Wk.crosstalk(G, dC, dX, core, X, gC, gX, tf_universe=tf_universe, min_conf=min_conf)
-        s = res["summary"]; nd, syn, ant = _direction(res)
+        s = res["summary"]; nd, syn_e, ant_e, syn_p, ant_p = _direction(res)
         inter = res["interference"]
         row = dict(target=X, n_nodes_target=len(dX), n_tfs_target=int(dX.is_endpoint.sum()),
                    n_core_nodes_without_target=len(dC), dependency=round(1 - len(dC) / n_full, 3) if n_full else 0.0,
                    shared_nodes=s["n_shared_nodes"], shared_endpoints=s["n_shared_endpoints"],
                    tf_overlap=s["tf_overlap"], tf_expected=s["tf_overlap_expected"], tf_enrichment=s["tf_enrichment"] or 0.0,
                    tf_p=s["tf_overlap_p"], n_interference=len(inter), interference_score=round(_interference_score(inter), 3),
-                   synergistic=syn, antagonistic=ant, net_direction=round(nd, 2),
+                   syn_edges=syn_e, ant_edges=ant_e, syn_endpoints=syn_p, ant_endpoints=ant_p, net_direction=round(nd, 2),
                    top_edges="; ".join(f"{r.from_node}->{r.to_node}({r.agreement[:3]})" for r in inter.head(3).itertuples()) if len(inter) else "")
         edges = inter.head(top_edges).assign(target=X) if len(inter) else None
         return row, edges

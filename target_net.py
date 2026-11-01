@@ -40,6 +40,7 @@ COMPARTMENTS = ["extracellular", "membrane", "cytosol", "lysosome", "mitochondri
 # ----------------------------------------------------------------------------- shared setup
 def build_signaling(args):
     seeds = [resolve_symbol(g) for g in (getattr(args, "gene", None), getattr(args, "causal", None), getattr(args, "goi", None)) if g]
+    seeds += list(getattr(args, "_extra_seeds", []) or [])          # cross-talk screen: every candidate target
     sig = D.load_signor(args.demo)
     parts = [sig]; und = pd.DataFrame(columns=["a", "b", "source"])
     if not args.no_reactome:
@@ -181,7 +182,7 @@ def run_upstream(args):
     gene = resolve_symbol(args.gene); out = os.path.join(run_dir(args, f"upstream_{gene}"), "upstream"); os.makedirs(out, exist_ok=True)
     G, und = build_signaling(args)
     receptors = D.load_receptors(args.demo); ligands = D.load_ligands(args.demo) - receptors
-    if D.CFG.get("walk", {}).get("seed_rescue", True): Wk.rescue_seed(G, gene, "up", D.REACTOME_DIRECTED, float(Cf.db(D.CFG, "reactome_fi", "weight") or 0.5))
+    Wk.prepare_seed(G, gene, "up", D.CFG, D.REACTOME_DIRECTED)
     df = Wk.signed_walk(G, gene, receptors | ligands, direction="up", max_depth=args.max_depth, min_score=args.min_score, hub_strength=args.hub_penalty, extend_to=ligands)
     _stop_if_empty(df, gene, "upstream", args)
     df, comp = annotate(df, G, gene, args, und)
@@ -211,7 +212,7 @@ def run_downstream(args, gene=None, quiet=False, exclude=(), G=None, und=None):
     if exclude:   # cross-talk: influence of this gene that does NOT pass through the other gene
         G = G.copy(); G.remove_nodes_from([e for e in exclude if e in G])
     tfs = D.load_tfs(args.demo)
-    if D.CFG.get("walk", {}).get("seed_rescue", True): Wk.rescue_seed(G, gene, "down", D.REACTOME_DIRECTED, float(Cf.db(D.CFG, "reactome_fi", "weight") or 0.5))
+    Wk.prepare_seed(G, gene, "down", D.CFG, D.REACTOME_DIRECTED)
     df = Wk.signed_walk(G, gene, tfs, direction="down", max_depth=args.max_depth, min_score=args.min_score, hub_strength=args.hub_penalty)
     _stop_if_empty(df, gene, "downstream", args, exclude)
     regulon = D.load_regulon(args.regulon, args.conf, args.regulon_file, args.demo)
@@ -242,6 +243,7 @@ def run_crosstalk_screen(args):
     C = resolve_symbol(args.causal)
     targets = [resolve_symbol(t) for t in Sc.parse_targets(args.goi_list)]
     out = os.path.join(run_dir(args, f"crosstalk_screen_{C}_{len(targets)}targets"), "screen"); os.makedirs(out, exist_ok=True)
+    args._extra_seeds = targets
     G, und = build_signaling(args)
     xt = D.CFG.get("crosstalk", {})
     if not getattr(args, "_explicit_depth", False): args.max_depth = xt.get("max_depth", 3)

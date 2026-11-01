@@ -253,7 +253,9 @@ def summarize_crosstalk(x, n=10):
              f"TF overlap {s['tf_overlap']}/{s['tf_causal']} vs expected {s['tf_overlap_expected']} -> enrichment {s['tf_enrichment']}, p = {s['tf_overlap_p']:.2g} "
              f"({x['target']} reaches {(s['goi_coverage_of_all_tfs'] or 0)*100:.0f}% of all TFs in the graph)",
              f"shared nodes {s['n_shared_nodes']}; interference edges {s['n_interference_edges']}; endpoints syn/ant/mixed/low-conf "
-             f"{s['synergistic']}/{s['antagonistic']}/{s['mixed']}/{s['low_confidence']}"]
+             f"{s['synergistic']}/{s['antagonistic']}/{s['mixed']}/{s['low_confidence']}"
+             + (f"; interference edges syn/ant/other {int((x['interference'].agreement == 'synergistic').sum())}/{int((x['interference'].agreement == 'antagonistic').sum())}/"
+                f"{int((~x['interference'].agreement.isin(['synergistic', 'antagonistic'])).sum())}" if len(x["interference"]) else "")]
     if len(x["interference"]):
         lines.append("top interference edges (by proximity):")
         for e in x["interference"].head(n).itertuples():

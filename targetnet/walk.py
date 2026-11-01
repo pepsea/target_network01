@@ -45,6 +45,14 @@ def rescue_seed(G, seed, direction, extra_df, weight=0.5):
     return n
 
 
+def prepare_seed(G, seed, direction, cfg, reactome_directed):
+    """Apply the same seed handling everywhere (pair analysis, screen, gene research): Reactome seed rescue when the
+    seed has no edge in the walk direction and walk.seed_rescue is on. Mutates G (adds only the seed's own edges)."""
+    if cfg.get("walk", {}).get("seed_rescue", True):
+        w = float(((cfg.get("databases") or {}).get("reactome_fi") or {}).get("weight") or 0.5)
+        rescue_seed(G, seed, direction, reactome_directed, w)
+
+
 def hub_penalty(G, max_deg=None, strength=0.5):
     deg = dict(G.degree()); m = max(deg.values()) if deg else 1
     return {n: 1.0 - strength * math.log1p(d) / math.log1p(m) for n, d in deg.items()}

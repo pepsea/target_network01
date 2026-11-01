@@ -420,7 +420,7 @@ def screen_figure(table_path, width=900, height=600, caption=True, label_top=25)
     txt = [r.target if r["rank"] <= label_top else "" for _, r in tab.iterrows()]
     hv = [f"<b>{r.target}</b>  rank {r['rank']}<br>interference {r.interference_score:.2f} ({r.n_interference} edges)"
           f"<br>TF enrichment {r.tf_enrichment:.2f}, p = {r.tf_p:.2g}<br>dependency {r.dependency:.2f}"
-          f"<br>synergistic {r.synergistic} / antagonistic {r.antagonistic} -> direction {r.net_direction:+.2f}"
+          f"<br>interference edges syn/ant {r.syn_edges}/{r.ant_edges}; shared endpoints syn/ant {r.syn_endpoints}/{r.ant_endpoints} -> direction {r.net_direction:+.2f}"
           + (f"<br>baseline z {r.baseline_z:+.2f} (pct {r.baseline_pct})" if pd.notna(r.get("baseline_z", float("nan"))) else "")
           + f"<br>{r.top_edges}" for _, r in tab.iterrows()]
     fig.add_trace(go.Scatter(x=tab.interference_score, y=tab.tf_enrichment, mode="markers+text", text=txt, textposition="top center",
