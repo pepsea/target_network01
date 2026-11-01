@@ -237,9 +237,10 @@ def _omnipath_commercial_resources():
 
 def load_omnipath_signed(demo=False, signor_df=None, seeds=()):
     """
-    OmniPath signed, directed interactions (many literature-curated resources pooled; omnipathdb.org) as a GAP FILLER for
-    SIGNOR: by default (mode: gaps) only edges whose source protein has no SIGNOR output, or whose target has no SIGNOR input,
-    are kept, so curated holes (e.g. ACVRL1 -> SMAD1/5, from SignaLink3) are closed without flooding hubs. mode: full keeps all.
+    OmniPath signed, directed interactions (many literature-curated resources pooled; omnipathdb.org) merged with SIGNOR.
+    mode: full (default) keeps every licence-filtered signed edge (owner's principle: more interactions, let the walk thresholds and
+    the figure layout cope). mode: gaps keeps only edges whose source has no SIGNOR output or whose target has no SIGNOR input,
+    plus edges touching the analysed genes (closes holes such as ACVRL1 -> SMAD1 without changing hub neighbourhoods).
     Licence: records are kept only if at least one contributing resource is marked purpose=commercial in OmniPath's resource
     list (e.g. SignaLink3 CC BY-SA 3.0, SIGNOR CC BY 4.0); non-commercial resources (Wang, Cellinker, PhosphoSite, HINT ...) are
     dropped from the record. Share-alike licences apply if you redistribute a derived database.
@@ -247,7 +248,7 @@ def load_omnipath_signed(demo=False, signor_df=None, seeds=()):
     """
     cols = ["src", "dst", "effect", "mechanism", "residue", "source", "score"]
     empty = pd.DataFrame(columns=cols)
-    mode = (_cfgmod.db(CFG, "omnipath", "mode") or "gaps").lower()
+    mode = (_cfgmod.db(CFG, "omnipath", "mode") or "full").lower()
     if demo or mode == "off": return empty
     datasets = _cfgmod.db(CFG, "omnipath", "datasets") or "omnipath,pathwayextra,kinaseextra,ligrecextra"
     loc = _cfgmod.db(CFG, "omnipath", "path")

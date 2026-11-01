@@ -55,8 +55,9 @@ databases:
     license: commercial         # OmniPath per-record licence filter: commercial | academic | ignore
     path: ~/Documents/database/dorothea/dorothea_ABC_commercial.tsv  # OmniPath export, or tf,target,mor,confidence; null = download
   omnipath:
-    mode: gaps                  # gaps (default): OmniPath signed edges only where SIGNOR has no output from the source / no input to the target,
-                                # PLUS every edge touching the analysed gene(s) (so "is there a direct X-C edge?" never depends on SIGNOR coverage) | full | off
+    mode: full                  # full (default): every licence-filtered, signed OmniPath edge joins the walk graph (more interactions; the walk's
+                                # min_score / hub_penalty keep hubs in check, the figures wrap crowded hops) | gaps: only where SIGNOR has no
+                                # output from the source / no input to the target, plus edges touching the analysed genes | off
     signed_only: true           # drop directed-but-unsigned records (they add nodes without a sign)
     min_references: 1           # keep records with at least this many literature references
     datasets: omnipath,pathwayextra,kinaseextra,ligrecextra

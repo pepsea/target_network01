@@ -73,9 +73,10 @@ python fetch_depmap.py --out ~/Documents/database/depmap          # downloads th
 python target_net.py omnipath-url --save ~/Documents/database/omnipath/omnipath_signed.tsv   # or leave path null: downloaded into cache_dir on first use
 ```
 - What: directed, signed protein interactions pooled by OmniPath (omnipathdb.org) from many curated resources (SignaLink3, SIGNOR, …).
-- Why: SIGNOR has curation holes (e.g. no output for ACVRL1 although ALK1 → SMAD1/5 is textbook). With `omnipath.mode: gaps`
-  (default) an OmniPath edge is used **only** where SIGNOR has no output from the source protein or no input to the target
-  protein, so holes are closed without re-flooding hubs. `mode: full` uses all (expect many more nodes; recalibrate min_score). `off` disables.
+- Why: SIGNOR alone is sparse (e.g. no output for ACVRL1 although ALK1 → SMAD1/5 is textbook). `omnipath.mode: full` (default)
+  merges every licence-filtered signed edge into the walk graph; `gaps` restricts to holes in SIGNOR (plus edges touching the analysed
+  genes); `off` disables. With `full`, expect more nodes per run — the walk thresholds (`walk.min_score`, `hub_penalty`) and the figure
+  layout (wrapped columns, node cap) are what keep results readable, not the data layer.
 - Licence: filtered locally against OmniPath's resource list — a record is kept only if a contributing resource is marked
   `purpose: commercial` (SIGNOR CC BY 4.0, SignaLink3 CC BY-SA 3.0, …); non-commercial resources (Wang, Cellinker, PhosphoSite,
   HINT …) are removed. Share-alike (SA) terms apply if you redistribute a derived database. Edge hover shows the retained resources.
