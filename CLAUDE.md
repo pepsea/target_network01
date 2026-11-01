@@ -9,6 +9,7 @@ Network-based drug-target research around a core gene. Entry points: `target_net
 - `targetnet/walk.py`    signed best-path walk (node set, score) + signed influence propagation (consensus sign, influence); regulon extension; cross-talk logic
 - `targetnet/screen.py`  cross-talk screen: one core gene vs a list of targets -> interference score, TF enrichment, dependency, direction, degree-matched random baseline, composite rank (notebooks/crosstalk_screen.ipynb, CLI crosstalk-screen)
 - `targetnet/interference.py` pathway interference: CORE network + 'TARGET inhibited' perturbation (entry edges from TARGET's side, propagated along CORE's signed edges) -> flow_change per node / gene (notebooks/pathway_interference.ipynb, CLI pathway-interference, plots.cell_flow_figure = cell cross-section layout)
+- `targetnet/interference.py::screen_targets` interference screen: CORE vs a list of targets ranked by predicted impact of inhibition (flow_change_index, tf_delta_total, direct_entries, down_share, baseline_z, composite); notebooks/interference_screen.ipynb, CLI interference-screen
 - `targetnet/plots.py`   the four views as Plotly figures (notebook inline AND the .html files in run folders; built from the .json next to each view)
 - `targetnet/templates/` original D3 pages, written only with --d3 as <view>_d3.html
 - `fetch_depmap.py`      DepMap downloader (portal API, Figshare fallback)
@@ -22,7 +23,7 @@ Network-based drug-target research around a core gene. Entry points: `target_net
 - Plots: flat, muted colours, white background, English labels.
 
 ## Test
-`for m in "upstream --gene AKT1" "downstream --gene AKT1" "sl --gene AKT1" "crosstalk --causal FGFR3 --goi HSP90AA2" "crosstalk-screen --causal FGFR3 --goi-list AKT1,MAPK1,HSP90AA2 --n-random 5" "pathway-interference --causal FGFR3 --goi MAPK1"; do python target_net.py $m --demo; done`
+`for m in "upstream --gene AKT1" "downstream --gene AKT1" "sl --gene AKT1" "crosstalk --causal FGFR3 --goi HSP90AA2" "crosstalk-screen --causal FGFR3 --goi-list AKT1,MAPK1,HSP90AA2 --n-random 5" "pathway-interference --causal FGFR3 --goi MAPK1" "interference-screen --causal FGFR3 --goi-list MAPK1,AKT1,HSP90AA2 --n-random 4"; do python target_net.py $m --demo; done`
 Notebooks: `jupyter nbconvert --to notebook --execute notebooks/gene_research.ipynb --output /tmp/t.ipynb`
 Expected textbook recovery: AKT1 upstream -> RTKs via PI3K/PDPK1; MAPK1 x AKT1 -> RSK->GSK3B S9, ERK-|SOS1 feedback.
 

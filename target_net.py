@@ -344,6 +344,31 @@ def run_pathway_interference(args):
     return res
 
 
+# ----------------------------------------------------------------------------- mode: interference screen (CORE vs a list of targets, impact ranking)
+def run_interference_screen(args):
+    from targetnet import interference as I, screen as Sc
+    C = resolve_symbol(args.causal); targets = [resolve_symbol(t) for t in Sc.parse_targets(args.goi_list)]
+    root = run_dir(args, f"interference_screen_{C}_{len(targets)}targets"); out = os.path.join(root, "screen"); os.makedirs(out, exist_ok=True)
+    G, und = build_signaling(args)
+    G, dC, gC = run_downstream(args, gene=C, quiet=True, G=G, und=und)          # CORE network once (downstream/)
+    tfs = D.load_tfs(args.demo); w = D.CFG.get("walk", {})
+    print(f"[iscreen] CORE {C}: {len(dC)} nodes, {int(dC.is_endpoint.sum())} TFs; {len(targets)} candidate targets; baseline {args.n_random} random genes")
+    res = I.screen_targets(G, C, dC, gC, targets, tfs, max_depth=args.max_depth, min_score=args.min_score, hub_strength=args.hub_penalty,
+                           through_tf=bool(w.get("through_tf", True)), score_mode=w.get("score_mode", "relative"), n_random=args.n_random, seed=args.seed)
+    tab = res["table"]; tab.attrs["core"] = C
+    tab.to_csv(os.path.join(out, "interference_screen.csv"), index=False)
+    if len(res["baseline"]): res["baseline"].to_csv(os.path.join(out, "baseline_random.csv"), index=False)
+    for X, r in res["details"].items():
+        nd = r["nodes"]; nd[nd.direction != "unchanged"].to_csv(os.path.join(out, f"flow_change_{X}.csv"), index=False)
+    json.dump(dict(core=C, targets=targets, skipped=res["skipped"]), open(os.path.join(out, "screen_info.json"), "w"), indent=1)
+    if len(tab):
+        from targetnet import plots as P
+        P.interference_screen_figure(tab).write_html(os.path.join(out, "interference_screen.html"), include_plotlyjs="cdn")
+        print(f"\n[iscreen] ranked {len(tab)} targets -> {out}/interference_screen.csv")
+        print(tab.head(15)[["rank", "target", "tfs_changed", "tfs_down", "tfs_up", "flow_change_index", "tf_delta_total", "direct_entries", "down_share", "baseline_z", "composite"]].to_string(index=False))
+    return tab
+
+
 # ----------------------------------------------------------------------------- calibrate: node counts vs min_score (walk only)
 def run_calibrate(args):
     """Walk the seed up and down at several min_score / hub_penalty values (no annotation, no DepMap) and print the sizes,
@@ -590,6 +615,10 @@ def main():
     p = sub.add_parser("pathway-interference", help="CORE network as a cell cross-section + predicted change when TARGET is inhibited")
     p.add_argument("--causal", required=True, help="CORE gene (usually a receptor)"); p.add_argument("--goi", required=True, help="TARGET gene (to be inhibited)")
     common(p); regulon_opts(p)
+    p = sub.add_parser("interference-screen", help="rank candidate targets by how much their inhibition changes the CORE network")
+    p.add_argument("--causal", required=True); p.add_argument("--goi-list", required=True, help="genes: 'A B C', 'A,B,C' or a text/CSV file")
+    p.add_argument("--n-random", type=int, default=20); p.add_argument("--seed", type=int, default=0)
+    common(p); regulon_opts(p)
     p = sub.add_parser("calibrate", help="node / receptor / TF counts of the walk at several min_score and hub_penalty values (walk only, fast)")
     p.add_argument("--gene", required=True); p.add_argument("--scores", default="0.2,0.25,0.3,0.35,0.4,0.5"); p.add_argument("--hubs", default="0.25")
     common(p)
@@ -639,7 +668,7 @@ def main():
     apply_config(args)
     try:
         {"upstream": run_upstream, "downstream": run_downstream, "sl": run_sl, "crosstalk": run_crosstalk, "crosstalk-screen": run_crosstalk_screen,
-         "calibrate": run_calibrate, "pathway-interference": run_pathway_interference}[args.mode](args)
+         "calibrate": run_calibrate, "pathway-interference": run_pathway_interference, "interference-screen": run_interference_screen}[args.mode](args)
     except D.DownloadError as e:
         sys.exit(str(e))
 

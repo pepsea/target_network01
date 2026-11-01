@@ -657,6 +657,41 @@ def cell_flow_figure(json_path, width=1100, height=820, max_nodes=None, focus=No
     return fig
 
 
+# --------------------------------------------------------------------------- interference screen (ranked targets by impact on the CORE network)
+def interference_screen_figure(table_path, width=900, height=600, caption=True, label_top=25):
+    """x = fraction of CORE TFs changed, y = total |delta| at TFs, size = direct entry points, fill = down_share (blue = TARGET inhibition
+    silences CORE output, red = it releases brakes / raises output, grey = mixed)."""
+    tab = pd.read_csv(table_path) if isinstance(table_path, str) else table_path
+    core = tab.attrs.get("core", "") if hasattr(tab, "attrs") else ""
+    if not len(tab): return _base("interference screen: no targets scored", width, height)
+    fig = _base(f"interference screen{(' on the ' + core + ' network') if core else ''}: {len(tab)} candidate targets", width, height)
+    def col(d):
+        if pd.isna(d): return "#cfcfcf"
+        if d >= 0.7: return "#3a6fb0"
+        if d <= 0.3: return "#c0392b"
+        return "#9a9a9a"
+    size = 8 + 4 * tab.direct_entries.clip(0, 10)
+    txt = [r.target if r["rank"] <= label_top else "" for _, r in tab.iterrows()]
+    hv = [f"<b>{r.target}</b> rank {r['rank']}<br>TFs changed {r.tfs_changed} ({r.tfs_down}↓ {r.tfs_up}↑), index {r.flow_change_index}<br>|delta| at TFs {r.tf_delta_total}"
+          f"<br>direct entries {r.direct_entries}, entry edges {r.entry_edges}<br>genes {r.genes_down}↓ {r.genes_up}↑"
+          + (f"<br>baseline z {r.baseline_z:+.2f}" if pd.notna(r.get("baseline_z", float("nan"))) else "") + f"<br>{r.top_tfs}" for _, r in tab.iterrows()]
+    fig.add_trace(go.Scatter(x=tab.flow_change_index, y=tab.tf_delta_total, mode="markers+text", text=txt, textposition="top center", textfont=dict(size=10),
+                             marker=dict(size=size, color=[col(d) for d in tab.down_share], line=dict(color="#333", width=1)), hovertext=hv, hoverinfo="text", showlegend=False))
+    for name, c in [("mostly DOWN: inhibition silences CORE output", "#3a6fb0"), ("mostly UP: inhibition releases brakes", "#c0392b"), ("mixed", "#9a9a9a")]:
+        fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers", marker=dict(size=10, color=c, line=dict(color="#333", width=1)), name=name))
+    fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers", marker=dict(size=22, color="#fff", line=dict(color="#333", width=1)), name="size = direct entry points"))
+    xmax = max(0.2, float(tab.flow_change_index.max()) * 1.2); ymax = max(0.5, float(tab.tf_delta_total.max()) * 1.2)
+    fig.update_xaxes(visible=True, showticklabels=True, title="flow-change index (fraction of CORE TFs changed)", showgrid=True, gridcolor="#eee", zeroline=False, range=[-0.03 * xmax, xmax], linecolor="#999")
+    fig.update_yaxes(visible=True, showticklabels=True, title="total |delta| at CORE TFs (relative units)", showgrid=True, gridcolor="#eee", zeroline=False, range=[-0.05 * ymax, ymax], linecolor="#999")
+    fig.update_layout(showlegend=True, legend=dict(orientation="h", y=-0.18))
+    if caption:
+        fig.add_annotation(xref="paper", yref="paper", x=0, y=-0.3, showarrow=False, align="left", font=dict(size=10, color="#555"),
+                           text="Each point = one candidate TARGET whose inhibition was propagated through the CORE network (pathway-interference model). Table: interference_screen.csv "
+                                "(composite = mean percentile of index, |delta|, direct entries; baseline_z vs degree-matched random genes). Magnitudes are relative within the run.")
+        fig.update_layout(margin=dict(b=150))
+    return fig
+
+
 # --------------------------------------------------------------------------- cross-talk screen (ranked targets)
 def screen_figure(table_path, width=900, height=600, caption=True, label_top=25):
     """

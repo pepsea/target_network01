@@ -240,6 +240,29 @@ def summarize_pathway_interference(p, n=12):
     return "\n".join(lines)
 
 
+def screen_interference(core, targets, **options):
+    """
+    Rank candidate TARGETs by the impact of their inhibition on the CORE network (pathway-interference model, CORE network computed once).
+    targets: list / plain text / file. Options as research_pathway_interference plus n_random (baseline), seed.
+    Returns dict(core, table, baseline, run_dir, view, per_target={X: flow_change DataFrame of changed nodes}).
+    """
+    a = _args(**options); cli.apply_config(a); a.causal = core; a.goi_list = targets
+    tab = cli.run_interference_screen(a)
+    out = f"{a.run_dir}/screen"
+    per = {}
+    for f in sorted(os.listdir(out)):
+        if f.startswith("flow_change_") and f.endswith(".csv"): per[f[len("flow_change_"):-4]] = _read(f"{out}/{f}")
+    return dict(core=cli.resolve_symbol(core), table=tab, baseline=_read(f"{out}/baseline_random.csv"), run_dir=a.run_dir,
+                view=f"{out}/interference_screen.html", per_target=per)
+
+
+def interference_screen_figure(x, **kw):
+    from . import plots
+    tab = x["table"] if isinstance(x, dict) else x
+    if isinstance(x, dict): tab.attrs["core"] = x.get("core", "")
+    return plots.interference_screen_figure(tab, **kw)
+
+
 def screen_crosstalk(core, targets, **options):
     """
     Rank a list of candidate target genes by their cross-talk with one core (disease-causal) gene.
