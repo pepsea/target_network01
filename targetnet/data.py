@@ -237,31 +237,53 @@ def load_tfs(demo=False):
     return tfs
 
 
+def omnipath_regulon_url(source="dorothea", conf="ABC", license="commercial"):
+    """URL that returns the regulon as tsv (same thing the automatic route downloads)."""
+    q = {"datasets": source, "organisms": 9606, "genesymbols": 1, "fields": "sources,references,dorothea_level", "license": license}
+    if source == "dorothea": q["dorothea_levels"] = ",".join(conf)
+    return OMNIPATH_URL + "?" + "&".join(f"{k}={v}" for k, v in q.items())
+
+
+def _regulon_from_table(df):
+    """Accept OmniPath export (source_genesymbol, target_genesymbol, is_stimulation, is_inhibition, dorothea_level)
+    or a simple table (tf, target, mor, confidence)."""
+    df.columns = [c.lower() for c in df.columns]
+    if "source_genesymbol" in df.columns:
+        out = pd.DataFrame({"tf": df.source_genesymbol, "target": df.target_genesymbol,
+                            "mor": np.where(pd.to_numeric(df.get("is_inhibition", 0), errors="coerce").fillna(0) == 1, -1, 1),
+                            "confidence": df.get("dorothea_level", pd.Series("A", index=df.index)).astype(str).str[0]})
+    elif {"tf", "target"} <= set(df.columns):
+        out = df.rename(columns={"source": "tf"})[["tf", "target"]].copy()
+        out["mor"] = pd.to_numeric(df.get("mor", 1), errors="coerce").fillna(1).astype(int)
+        out["confidence"] = df.get("confidence", pd.Series("A", index=df.index)).astype(str).str[0]
+    elif {"source", "target"} <= set(df.columns):   # decoupler / CollecTRI style
+        out = pd.DataFrame({"tf": df.source, "target": df.target, "mor": np.sign(pd.to_numeric(df.get("weight", 1), errors="coerce").fillna(1)).astype(int),
+                            "confidence": df.get("confidence", pd.Series("A", index=df.index)).astype(str).str[0]})
+    else:
+        raise SystemExit(f"[regulon] unrecognised columns: {list(df.columns)[:10]}")
+    return out
+
+
 def load_regulon(source=None, conf=None, path=None, demo=False):
     """DataFrame: tf, target, mor(+1/-1), confidence, weight."""
     if demo:
         return _demo_regulon()
     source = source or _cfgmod.db(CFG, "regulon", "source") or "dorothea"
     conf = conf or _cfgmod.db(CFG, "regulon", "conf") or "ABC"
+    lic = _cfgmod.db(CFG, "regulon", "license") or "commercial"
     path = path or _local("regulon")
     if path:
         print(f"[regulon] source: {path}")
         df = pd.read_csv(path, sep=None, engine="python")
-        df.columns = [c.lower() for c in df.columns]
     else:
-        params = {"datasets": source, "organisms": 9606, "genesymbols": 1, "fields": "sources,dorothea_level",
-                  "dorothea_levels": ",".join(conf)} if source == "dorothea" else \
-                 {"datasets": source, "organisms": 9606, "genesymbols": 1, "fields": "sources"}
-        txt = cached_text(f"omnipath_{source}_{conf}", OMNIPATH_URL, params)
+        txt = cached_text(f"omnipath_{source}_{conf}_{lic}", omnipath_regulon_url(source, conf, lic))
+        print(f"[regulon] source: OmniPath ({source}, levels {conf}, license={lic})")
         df = pd.read_csv(io.StringIO(txt), sep="\t")
-        df = df.rename(columns={"source_genesymbol": "tf", "target_genesymbol": "target"})
-        df["mor"] = np.where(df.get("is_inhibition", 0) == 1, -1, 1)
-        df["confidence"] = df.get("dorothea_level", "A").astype(str).str[0]
-    df = df[["tf", "target", "mor", "confidence"]].copy()
-    df["tf"] = df.tf.str.upper(); df["target"] = df.target.str.upper()
-    df = df[df.confidence.isin(list(conf))]
+    df = _regulon_from_table(df)
+    df["tf"] = df.tf.astype(str).str.upper(); df["target"] = df.target.astype(str).str.upper()
+    df = df[df.confidence.isin(list(conf))].drop_duplicates(["tf", "target"])
     df["weight"] = df.confidence.map({"A": 1.0, "B": 0.8, "C": 0.6, "D": 0.4, "E": 0.2}).fillna(0.5)
-    print(f"[{source}] {len(df)} TF-target edges (conf {conf})")
+    print(f"[{source}] {len(df)} TF-target edges (conf {conf}), {df.tf.nunique()} TFs")
     return df
 
 

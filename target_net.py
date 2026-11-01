@@ -275,8 +275,21 @@ def main():
     p = sub.add_parser("upstream"); p.add_argument("--gene", required=True); common(p)
     p = sub.add_parser("downstream"); p.add_argument("--gene", required=True); common(p); regulon_opts(p)
     p = sub.add_parser("sl"); p.add_argument("--gene", required=True); common(p)
+    p = sub.add_parser("regulon-url", help="print (or --save FILE) the OmniPath URL for the configured regulon")
+    p.add_argument("--save", default=None); p.add_argument("--config", default=None)
+    p.add_argument("--source", default=None); p.add_argument("--conf", default=None); p.add_argument("--license", default=None)
     p = sub.add_parser("crosstalk"); p.add_argument("--causal", required=True); p.add_argument("--goi", required=True); common(p); regulon_opts(p)
     args = ap.parse_args()
+    if args.mode == "regulon-url":
+        cfg = Cf.load_config(args.config)
+        url = D.omnipath_regulon_url(args.source or Cf.db(cfg, "regulon", "source") or "dorothea", args.conf or Cf.db(cfg, "regulon", "conf") or "ABC",
+                                     args.license or Cf.db(cfg, "regulon", "license") or "commercial")
+        print(url)
+        if args.save:
+            import requests; os.makedirs(os.path.dirname(os.path.expanduser(args.save)) or ".", exist_ok=True)
+            r = requests.get(url, timeout=600); r.raise_for_status(); open(os.path.expanduser(args.save), "w").write(r.text)
+            D.set_config(cfg); print(f"saved {args.save}: {len(D.load_regulon(path=os.path.expanduser(args.save)))} edges")
+        return
     apply_config(args)
     {"upstream": run_upstream, "downstream": run_downstream, "sl": run_sl, "crosstalk": run_crosstalk}[args.mode](args)
 

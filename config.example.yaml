@@ -16,10 +16,12 @@ databases:
     # curl -o uniprot_human_reviewed.tsv "https://rest.uniprot.org/uniprotkb/stream?query=organism_id:9606+AND+reviewed:true&fields=accession,gene_primary,keyword,cc_subcellular_location&format=tsv"
   receptors:                  # optional override: plain text, one HGNC symbol per line
     path: null
-  regulon:                    # tsv/csv columns: tf, target, mor (+1/-1), confidence (A-E)
-    source: dorothea          # dorothea | collectri (used for the OmniPath download when path is null)
-    conf: ABC
-    path: ~/data/dorothea/dorothea_hs_ABC.tsv
+  regulon:                    # DoRothEA / CollecTRI regulons
+    source: dorothea          # dorothea | collectri
+    conf: ABC                 # DoRothEA confidence levels to keep
+    license: commercial       # OmniPath per-record licence filter: commercial | academic | ignore
+    path: ~/Documents/database/dorothea/dorothea_ABC_commercial.tsv   # OmniPath export or tf,target,mor,confidence; null = download
+    # download once:  python target_net.py regulon-url   (prints the URL)  ->  curl -o <path> "<url>"
   string:
     min_score: 700            # STRING physical network, experimental+database channels, via API
   compartments:               # tsv: gene <TAB> compartment (membrane|cytosol|lysosome|mitochondrion|ER_golgi|nucleus); null = UniProt API

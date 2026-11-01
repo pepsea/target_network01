@@ -88,6 +88,15 @@ mkdir -p ~/Documents/database/uniprot && curl -o ~/Documents/database/uniprot/un
 ```
 and set `databases.uniprot.path` to it.
 
+## DoRothEA / CollecTRI regulons
+Downloaded from OmniPath with a per-record licence filter (`regulon.license: commercial` by default — only records whose
+sources allow commercial use). To keep a local copy in your database folder:
+```bash
+python target_net.py regulon-url --save ~/Documents/database/dorothea/dorothea_ABC_commercial.tsv
+```
+then set `databases.regulon.path` to that file. (`regulon-url` alone just prints the URL for curl.)
+The loader also accepts the simple format `tf,target,mor,confidence` and decoupler-style `source,target,weight`.
+
 ## SIGNOR input
 Either the API dump or SIGNOR's full download `all_data_DD_MM_YY.tsv` works (`databases.signor.path`). The full file is
 filtered to human (TAX_ID 9606) protein→protein rows; the SIGNOR confidence `SCORE` scales the edge weight (×0.6–1.0).

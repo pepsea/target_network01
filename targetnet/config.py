@@ -23,7 +23,9 @@ DEFAULTS = {
         "uniprot":     {"path": None, "url": "https://rest.uniprot.org/uniprotkb/stream?query=organism_id:9606+AND+reviewed:true&fields=accession,gene_primary,keyword,cc_subcellular_location&format=tsv"},
                                                              # bulk human reviewed UniProt tsv -> receptors + compartments offline
         "receptors":   {"path": None},                       # txt, one gene symbol per line (overrides uniprot bulk; else UniProt API)
-        "regulon":     {"source": "dorothea", "conf": "ABC", "path": None},   # tsv: tf,target,mor,confidence (else OmniPath)
+        "regulon":     {"source": "dorothea", "conf": "ABC", "path": None, "license": "commercial"},
+                                                             # local tsv (OmniPath export or tf,target,mor,confidence); else OmniPath query
+                                                             # license: commercial | academic | ignore  (OmniPath per-record licence filter)
         "string":      {"min_score": 700},                   # STRING API only
         "compartments":{"path": None},                       # tsv: gene<TAB>compartment (else UniProt API)
         "depmap":      {"dir": None},                        # folder with CRISPRGeneEffect.csv etc.
