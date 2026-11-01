@@ -34,9 +34,10 @@ DEFAULTS = {
         "string":      {"min_score": 700},                   # STRING API only
         "compartments":{"path": None},                       # tsv: gene<TAB>compartment (else UniProt API)
         "depmap":      {"dir": None},                        # folder with CRISPRGeneEffect.csv etc.
+        "custom_edges": {"path": None},
         "hpa_tissue":  {"path": None, "url": "https://www.proteinatlas.org/download/rna_tissue_consensus.tsv.zip"},
     },
-    "walk": {"max_depth": 5, "min_score": 0.25, "hub_penalty": 0.25},
+    "walk": {"max_depth": 5, "min_score": 0.25, "hub_penalty": 0.25, "seed_rescue": True},
     "crosstalk": {"max_depth": 3, "min_score": 0.3, "min_sign_confidence": 0.5, "max_edges_plot": 40},   # local walks: cross-talk is proximal interference
     "sl":   {"min_lost": 20, "padj": 0.05, "delta": 0.15},
 }

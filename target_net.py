@@ -43,6 +43,8 @@ def build_signaling(args):
     parts = [sig]; und = pd.DataFrame(columns=["a", "b", "source"])
     if not args.no_reactome:
         rd, und = D.load_reactome_fi(args.reactome_fi, args.demo); parts.append(rd)
+    cust = D.load_custom_edges(args.demo)
+    if len(cust): parts.append(cust)
     directed = D.merge_directed(*parts)
     expressed = None if args.demo else D.load_expressed(args.tissue, args.expressed_file)
     G = Wk.build_graph(directed, expressed)
@@ -145,6 +147,7 @@ def run_upstream(args):
     gene = resolve_symbol(args.gene); out = os.path.join(run_dir(args, f"upstream_{gene}"), "upstream"); os.makedirs(out, exist_ok=True)
     G, und = build_signaling(args)
     receptors = D.load_receptors(args.demo)
+    if D.CFG.get("walk", {}).get("seed_rescue", True): Wk.rescue_seed(G, gene, "up", D.REACTOME_DIRECTED, float(Cf.db(D.CFG, "reactome_fi", "weight") or 0.5))
     df = Wk.signed_walk(G, gene, receptors, direction="up", max_depth=args.max_depth, min_score=args.min_score, hub_strength=args.hub_penalty)
     _stop_if_empty(df, gene, "upstream", args)
     df, comp = annotate(df, G, gene, args, und)
@@ -172,6 +175,7 @@ def run_downstream(args, gene=None, quiet=False, exclude=(), G=None, und=None):
     if exclude:   # cross-talk: influence of this gene that does NOT pass through the other gene
         G = G.copy(); G.remove_nodes_from([e for e in exclude if e in G])
     tfs = D.load_tfs(args.demo)
+    if D.CFG.get("walk", {}).get("seed_rescue", True): Wk.rescue_seed(G, gene, "down", D.REACTOME_DIRECTED, float(Cf.db(D.CFG, "reactome_fi", "weight") or 0.5))
     df = Wk.signed_walk(G, gene, tfs, direction="down", max_depth=args.max_depth, min_score=args.min_score, hub_strength=args.hub_penalty)
     _stop_if_empty(df, gene, "downstream", args, exclude)
     regulon = D.load_regulon(args.regulon, args.conf, args.regulon_file, args.demo)
@@ -305,6 +309,7 @@ def check_config(cfg):
       ("compartments", "optional override of compartments", Cf.db(cfg, "compartments"), "", "derived from uniprot"),
       ("tf_list", "downstream endpoints (required for downstream/crosstalk)", Cf.db(cfg, "tf_list"), "", "download Lambert 2018"),
       ("regulon", "TF -> target genes", Cf.db(cfg, "regulon"), f"source={Cf.db(cfg,'regulon','source')}, conf={Cf.db(cfg,'regulon','conf')}, license={Cf.db(cfg,'regulon','license')}", "download via OmniPath"),
+      ("custom_edges", "optional user-curated edges merged into the walk graph", Cf.db(cfg, "custom_edges"), "", "none (optional)"),
       ("hpa_tissue", "expression filter (--tissue only)", Cf.db(cfg, "hpa_tissue"), "", "download HPA consensus"),
     ]
     print(f"\n{'database':<14}{'used for':<52}{'status':<9}{'size':<10}path / options")

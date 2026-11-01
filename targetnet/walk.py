@@ -25,6 +25,26 @@ def build_graph(directed_df, expressed=None):
     return G
 
 
+def rescue_seed(G, seed, direction, extra_df, weight=0.5):
+    """
+    If the seed has no edge in the walk direction (e.g. ACVRL1 has no outgoing protein edge in SIGNOR), add the
+    mechanistic directed Reactome FIs that start (direction 'down') or end ('up') at the seed, so the walk can leave it.
+    Only the seed's own edges are added (the rest of the graph stays SIGNOR-only). Returns the number of edges added.
+    """
+    if extra_df is None or not len(extra_df) or seed not in G: return 0
+    deg = G.out_degree(seed) if direction == "down" else G.in_degree(seed)
+    if deg > 0: return 0
+    sub = extra_df[extra_df.src == seed] if direction == "down" else extra_df[extra_df.dst == seed]
+    n = 0
+    for r in sub.itertuples():
+        if r.src == r.dst or G.has_edge(r.src, r.dst): continue
+        G.add_edge(r.src, r.dst, effect=int(r.effect), weight=float(weight), source="Reactome(seed rescue)", mechanism="reactome_FI", residue="")
+        n += 1
+    if n: print(f"[walk] seed rescue: {seed} had no {'outgoing' if direction == 'down' else 'incoming'} edge in the signed graph -> "
+                f"added {n} mechanistic Reactome FI edge(s) at weight {weight} (sign from the FI annotation; verify before trusting)")
+    return n
+
+
 def hub_penalty(G, max_deg=None, strength=0.5):
     deg = dict(G.degree()); m = max(deg.values()) if deg else 1
     return {n: 1.0 - strength * math.log1p(d) / math.log1p(m) for n, d in deg.items()}

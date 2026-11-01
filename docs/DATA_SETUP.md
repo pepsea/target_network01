@@ -68,7 +68,14 @@ python fetch_depmap.py --out ~/Documents/database/depmap          # downloads th
 - Columns used: `Gene name`, `Tissue`, `nTPM` (genes with nTPM ≥ 1 in the chosen tissue are kept). Both `.tsv` and `.zip` accepted.
 - Licence is CC BY-SA: used only as a filter, never redistributed in outputs. Updated: yearly.
 
-## 8. STRING (physical contact with the seed)
+## 8. Custom edges (optional, your own curation or in-house data)
+A tsv/csv at `databases.custom_edges.path` with columns `src, dst, effect` (+1 / −1 / 0, or activate / inhibit) and optional
+`mechanism, residue, score (0–1), source`. Lines starting with `#` are ignored. Edges are merged into the walk graph as source
+`custom` (weight 0.8 × score; a pair also in SIGNOR becomes `SIGNOR+custom`, 0.95). Use it for relations SIGNOR lacks
+(e.g. `ACVRL1 SMAD1 activate phosphorylation`) or for AirID / phosphoproteomics results you want the walk to see. Every edge you add is
+your assertion — keep the file under version control next to the project.
+
+## 9. STRING (physical contact with the seed)
 - API only (`https://string-db.org/api/...`, experimental + database channels, score ≥ 700). Needs internet; with `allow_download: false` this layer is skipped.
 - A local STRING file is not supported yet (the full `protein.physical.links.detailed.v12.0.txt.gz` is 1.5 GB; open item if offline use matters).
 

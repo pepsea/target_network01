@@ -40,7 +40,7 @@ LAMBERT_URL = "http://humantfs.ccbr.utoronto.ca/download/v_1.01/DatabaseExtract_
 OMNIPATH_URL = "https://omnipathdb.org/interactions"
 HPA_URL = "https://www.proteinatlas.org/download/rna_tissue_consensus.tsv.zip"
 
-EDGE_WEIGHT = {"SIGNOR": 0.9, "Reactome": 0.7, "SIGNOR+Reactome": 0.95}
+EDGE_WEIGHT = {"SIGNOR": 0.9, "Reactome": 0.7, "SIGNOR+Reactome": 0.95, "custom": 0.8, "SIGNOR+custom": 0.95, "Reactome+custom": 0.9, "Reactome+SIGNOR+custom": 0.95}
 
 
 class DownloadError(RuntimeError):
@@ -207,17 +207,48 @@ def load_reactome_fi(path=None, demo=False):
     for a, b, d, m in zip(df.Gene1.str.upper(), df.Gene2.str.upper(), df.Direction.fillna("-").str.strip(), mech):
         if a == b: continue
         if mode == "off": break
-        if mode == "directed" and m and d != "-":
+        if m and d != "-":           # mechanistic, directed FI: walk edge in mode=directed; kept aside for seed rescue in mode=context
             if "->" in d or d == "<->": rows.append((a, b, 1))
             if "<-" in d or d == "<->": rows.append((b, a, 1))
             if "-|" in d: rows.append((a, b, -1))
             if "|-" in d: rows.append((b, a, -1))
+            if mode != "directed": und.append((a, b))
         else:
             und.append((a, b))
-    dirdf = pd.DataFrame(rows, columns=["src", "dst", "effect"]).assign(mechanism="reactome_FI", residue="", source="Reactome").drop_duplicates(["src", "dst"])
+    mech_df = pd.DataFrame(rows, columns=["src", "dst", "effect"]).assign(mechanism="reactome_FI", residue="", source="Reactome").drop_duplicates(["src", "dst"])
+    global REACTOME_DIRECTED; REACTOME_DIRECTED = mech_df
+    dirdf = mech_df if mode == "directed" else mech_df.iloc[0:0]
     unddf = pd.DataFrame(und, columns=["a", "b"]).assign(source="Reactome")
-    print(f"[Reactome] FI rows {n0} -> after score/predicted filter {len(df)} -> directed (mechanistic) {len(dirdf)}, context {len(unddf)}  [mode={mode}]")
+    print(f"[Reactome] FI rows {n0} -> after score/predicted filter {len(df)} -> directed (mechanistic) {len(mech_df)}{' (context only; used for seed rescue)' if mode != 'directed' else ''}, context {len(unddf)}  [mode={mode}]")
     return dirdf, unddf
+
+
+REACTOME_DIRECTED = None   # mechanistic directed Reactome FIs from the last load (seed rescue uses them even in mode=context)
+
+
+def load_custom_edges(demo=False):
+    """
+    Optional user-curated edge table (databases.custom_edges.path): tsv/csv with columns
+      src, dst, effect   (+1 / -1 / 0, or activate|inhibit|unknown)   [mechanism] [residue] [score 0-1] [source]
+    Typical use: relations missing from SIGNOR (e.g. ACVRL1 -> SMAD1 phosphorylation) or in-house results
+    (AirID proximity labelling, phosphoproteomics). Edges are merged like a database (source label 'custom', weight 0.8 x score).
+    """
+    if demo: return pd.DataFrame(columns=["src", "dst", "effect", "mechanism", "residue", "source", "score"])
+    p = _cfgmod.db(CFG, "custom_edges", "path")
+    if not p: return pd.DataFrame(columns=["src", "dst", "effect", "mechanism", "residue", "source", "score"])
+    if not os.path.exists(p): raise SystemExit(f"[config] custom_edges: configured path not found: {p}")
+    df = pd.read_csv(p, sep=None, engine="python", dtype=str, comment="#")
+    df.columns = [c.strip().lower() for c in df.columns]
+    if not {"src", "dst"} <= set(df.columns): raise SystemExit("[custom_edges] needs columns src, dst (and effect)")
+    eff = df.get("effect", pd.Series("0", index=df.index)).fillna("0").astype(str).str.strip().str.lower()
+    eff = eff.map(lambda e: 1 if e in ("1", "+1", "activate", "activates", "up", "+") else -1 if e in ("-1", "inhibit", "inhibits", "down", "-") else 0)
+    out = pd.DataFrame({"src": df.src.str.upper().str.strip(), "dst": df.dst.str.upper().str.strip(), "effect": eff,
+                        "mechanism": df.get("mechanism", pd.Series("", index=df.index)).fillna(""),
+                        "residue": df.get("residue", pd.Series("", index=df.index)).fillna(""),
+                        "source": "custom", "score": pd.to_numeric(df.get("score", pd.Series(1.0, index=df.index)), errors="coerce").fillna(1.0)})
+    out = out[out.src != out.dst].drop_duplicates(["src", "dst"])
+    print(f"[custom] {len(out)} user edges from {p}")
+    return out
 
 
 def merge_directed(*dfs):

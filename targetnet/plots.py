@@ -41,7 +41,7 @@ def _base(title, w=1000, h=650):
 
 CAPTIONS = {
  "flow": [
-  "LINES  dark grey curve = signaling edge from the signed graph (SIGNOR direct relations; Reactome only if mode=directed); it runs from regulator to target.",
+  "LINES  dark grey curve = signaling edge from the signed graph (SIGNOR direct relations, plus custom_edges if configured; Reactome FI only if mode=directed or as seed rescue — hover an edge for its source); it runs from regulator to target.",
   "       ▶ arrowhead = activation / up-regulation · ┃ bar head = inhibition / down-regulation · dotted grey = relation of unknown sign.",
   "       Line thickness ∝ edge confidence (SIGNOR score). Only edges among drawn nodes are shown; the walk itself used the whole graph.",
   "NODES  dark blue = seed gene · blue = endpoint (receptor in upstream view, transcription factor in downstream view) · grey = intermediate.",

@@ -52,6 +52,9 @@ databases:
     conf: ABC                   # DoRothEA confidence levels kept
     license: commercial         # OmniPath per-record licence filter: commercial | academic | ignore
     path: ~/Documents/database/dorothea/dorothea_ABC_commercial.tsv  # OmniPath export, or tf,target,mor,confidence; null = download
+  custom_edges:
+    path: null                  # optional tsv: src, dst, effect(+1/-1/0 or activate/inhibit) [, mechanism, residue, score, source]
+                                # relations missing from SIGNOR (e.g. ACVRL1 -> SMAD1) or in-house data (AirID, phospho); merged as source 'custom', weight 0.8
   hpa_tissue:
     path: ~/Documents/database/hpa/rna_tissue_consensus_tissues.tsv  # columns Gene name, Tissue, nTPM; used only with --tissue NAME
 
@@ -64,6 +67,7 @@ walk:
   max_depth: 5                  # hops from the seed
   min_score: 0.25               # drop nodes whose best-path score (edge weights x hub penalty) is below this; live AKT1: 0.2 -> 903 nodes/79 receptors, 0.3 -> 222/13
   hub_penalty: 0.25             # 0 = none, 0.5 = strong down-weighting of highly connected nodes
+  seed_rescue: true             # seed with no edge in the walk direction (SIGNOR gap): add its own mechanistic Reactome FI edges so the walk can start
 
 # ---- cross-talk mode: deliberately local walks (hubs reach most of the graph at depth 5) -------------------
 crosstalk:
