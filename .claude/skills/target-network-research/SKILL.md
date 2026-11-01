@@ -79,7 +79,7 @@ Sanity checks before reporting novel hits (state the outcome in one line):
 
 ## 5. Report
 
-Answer first, then evidence. Single gene: top receptors (hops, sign, co-essentiality), TF programmes switched on/off,
+Answer first, then evidence. Single gene: start from `r["genes"]` / `gene_table.csv` (one row per gene: direction, hops, role, influence, signs, SL flag) — top receptors (hops, sign, co-essentiality), TF programmes switched on/off,
 synthetic-lethal hits with `on_pathway = False`. Cross-talk: index with baseline, interference edges (from → to, residue or
 mechanism, synergistic/antagonistic), antagonistic edges called out (combination-therapy relevance). Always state the databases
 and config used, whether DepMap / tissue filter were on, that database edges are context-free hypotheses, and that

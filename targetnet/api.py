@@ -54,7 +54,7 @@ def research_gene(gene, run_sl=None, **options):
     if run_sl:
         try: cli.run_sl(a)
         except SystemExit as e: sl_note = str(e); print(f"[sl] skipped: {e}")
-    return dict(
+    res = dict(
         gene=gene, run_dir=out, sl_note=sl_note,
         upstream_nodes=_read(f"{out}/upstream/upstream_nodes.csv"), receptors=_read(f"{out}/upstream/receptors.csv"),
         downstream_nodes=_read(f"{out}/downstream/downstream_nodes.csv"), tfs=_read(f"{out}/downstream/transcription_factors.csv"),
@@ -62,6 +62,53 @@ def research_gene(gene, run_sl=None, **options):
         views=dict(upstream_flow=f"{out}/upstream/flow.html", upstream_cell_map=f"{out}/upstream/cell_map.html",
                    downstream_flow=f"{out}/downstream/flow.html", downstream_cell_map=f"{out}/downstream/cell_map.html",
                    sl=f"{out}/sl/synthetic_lethality.html"))
+    res["genes"] = gene_table(res)                       # one row per gene, upstream + downstream merged
+    res["genes"].to_csv(f"{out}/gene_table.csv", index=False)
+    return res
+
+
+def gene_table(r):
+    """
+    One row per gene reached from the seed, upstream and/or downstream, merged into a single ranked table.
+    Columns: gene, direction (upstream / downstream / both), hops (shortest, either direction), hops_up, hops_down,
+    role (receptor / TF / intermediate), score_up/score_down (best-path), influence_up/influence_down (all paths),
+    sign_up (gene's net effect ON the seed), sign_down (seed's net effect on the gene), confidences, feedback,
+    coessentiality_r, physical_with_seed, compartment, n_target_genes (TFs), sl_hit, best_path_up, best_path_down.
+    Sorted by hops then total influence.
+    """
+    up, dn = r["upstream_nodes"], r["downstream_nodes"]
+    cols = ["node", "hops", "score", "influence", "sign", "sign_confidence", "is_endpoint", "feedback", "coessentiality_r",
+            "physical_with_seed", "compartment", "degree", "best_path"]
+    u = up[[c for c in cols if c in up.columns]].rename(columns={"hops": "hops_up", "score": "score_up", "influence": "influence_up",
+            "sign": "sign_up", "sign_confidence": "conf_up", "is_endpoint": "is_receptor", "best_path": "best_path_up", "feedback": "feedback_up"})
+    d = dn[[c for c in cols if c in dn.columns]].rename(columns={"hops": "hops_down", "score": "score_down", "influence": "influence_down",
+            "sign": "sign_down", "sign_confidence": "conf_down", "is_endpoint": "is_tf", "best_path": "best_path_down", "feedback": "feedback_down"})
+    shared = ["coessentiality_r", "physical_with_seed", "compartment", "degree"]
+    t = u.merge(d.drop(columns=[c for c in shared if c in d.columns]), on="node", how="outer")
+    for c in shared:                                   # fill annotation columns from whichever side has them
+        if c not in t.columns and c in d.columns:
+            t = t.merge(d[["node", c]], on="node", how="left")
+    t = t.fillna({c: "" for c in t.columns if t[c].dtype == object})
+    t["direction"] = ["both" if (pd.notna(a) and pd.notna(b)) else "upstream" if pd.notna(a) else "downstream" for a, b in zip(t.get("hops_up"), t.get("hops_down"))]
+    t["hops"] = t[["hops_up", "hops_down"]].min(axis=1).astype(int)
+    t["role"] = ["receptor" if rc is True else "TF" if tf is True else "intermediate" for rc, tf in zip(t.get("is_receptor"), t.get("is_tf"))]
+    t["influence_total"] = t[["influence_up", "influence_down"]].fillna(0).sum(axis=1).round(4)
+    t["feedback"] = t.get("feedback_up", False).fillna(False).astype(bool) | t.get("feedback_down", False).fillna(False).astype(bool)
+    tg = r.get("target_genes")
+    if tg is not None and len(tg):
+        n_t = tg.groupby("tf").gene.nunique(); t["n_target_genes"] = t.node.map(n_t).fillna(0).astype(int)
+    else:
+        t["n_target_genes"] = 0
+    sl = r.get("sl")
+    hits = set(sl[sl.significant].gene) if sl is not None and len(sl) and "significant" in sl.columns else set()
+    t["sl_hit"] = t.node.isin(hits)
+    order = ["node", "direction", "hops", "hops_up", "hops_down", "role", "score_up", "score_down", "influence_up", "influence_down", "influence_total",
+             "sign_up", "conf_up", "sign_down", "conf_down", "feedback", "coessentiality_r", "physical_with_seed", "compartment", "degree",
+             "n_target_genes", "sl_hit", "best_path_up", "best_path_down"]
+    t = t[[c for c in order if c in t.columns]].rename(columns={"node": "gene"})
+    for c in ("hops_up", "hops_down"):
+        if c in t.columns: t[c] = t[c].astype("Int64")
+    return t.sort_values(["hops", "influence_total"], ascending=[True, False]).reset_index(drop=True)
 
 
 def research_crosstalk(core, target, **options):

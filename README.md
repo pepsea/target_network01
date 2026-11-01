@@ -33,7 +33,7 @@ database; anything left `null` is downloaded into `cache_dir` when `allow_downlo
 notebooks/gene_research.ipynb       input: one candidate gene  -> upstream / downstream / synthetic lethality
 notebooks/crosstalk_research.ipynb  input: CORE (disease-causal) + TARGET gene -> cross-talk
 ```
-Both use `targetnet.api` (`research_gene`, `research_crosstalk`, `show`) and write results to `runs/<YYYYMMDD_HHMMSS>_gene_<GENE>/` or `runs/<YYYYMMDD_HHMMSS>_crosstalk_<CORE>_x_<TARGET>/` (`run_info.json` records the parameters; `out=` changes the root).
+Both use `targetnet.api` (`research_gene`, `research_crosstalk`, `figure`, `show`); `research_gene` also returns `r["genes"]` / writes `gene_table.csv`: one row per gene with direction, hops, role, score, influence, signs, feedback, co-essentiality, compartment, SL flag and write results to `runs/<YYYYMMDD_HHMMSS>_gene_<GENE>/` or `runs/<YYYYMMDD_HHMMSS>_crosstalk_<CORE>_x_<TARGET>/` (`run_info.json` records the parameters; `out=` changes the root).
 
 ## Setup
 ```bash
