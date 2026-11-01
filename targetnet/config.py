@@ -18,7 +18,8 @@ DEFAULTS = {
     "allow_download": True,
     "databases": {
         "signor":      {"path": None, "url": "https://signor.uniroma2.it/getData.php?organism=9606",
-                        "indirect": "drop"},     # SIGNOR DIRECT column: drop (default) | weight (keep at low weight) | keep
+                        "indirect": "drop",      # SIGNOR DIRECT column: drop (default) | weight (keep at low weight) | keep
+                        "source": "file"},       # file (path or SIGNOR API) | omnipath (SIGNOR mirror via OmniPath; no SCORE/DIRECT columns)
         "reactome_fi": {"path": None, "url": "https://reactome.org/download/tools/ReatomeFIs/FIsInGene_070323_with_annotations.txt.zip",
                         "mode": "context",       # context (default) = undirected context layer only; directed = mechanistic FIs join the walk; off
                         "min_score": 1.0,        # FI score: 1.0 = pathway-annotated; <1 = NBC-predicted (excluded by default)

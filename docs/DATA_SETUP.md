@@ -25,6 +25,7 @@ Legend: **required** = the walk cannot run without it · *optional* = adds a lay
 - The loader keeps human (`TAX_ID 9606`) protein→protein rows and uses the `SCORE` column as edge confidence.
 - Optional, for the open item "expand complexes/families": from the same page download **Complexes** (`SIGNOR_complexes.csv`) and **Protein families** (`SIGNOR_PF.csv`).
 - Updated: monthly. Re-download a few times a year; keep the date in the file name.
+- Site down? The pipeline falls back to the OmniPath mirror of SIGNOR (`databases.signor.source: omnipath`); it lacks SCORE/DIRECT, so prefer the native file when available.
 
 ## 2. Reactome Functional Interaction network (required)
 - Page: https://reactome.org/download-data → section **"Functional Interactions"** (Reactome FI) → `FIsInGene_<MMDDYY>_with_annotations.txt.zip`.

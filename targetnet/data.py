@@ -87,8 +87,14 @@ def load_signor(demo=False):
     """
     if demo:
         return _demo_signor()
+    if (_cfgmod.db(CFG, "signor", "source") or "file") == "omnipath":
+        return load_signor_omnipath()
     loc = _local("signor")
-    txt = open(loc, encoding="utf-8", errors="replace").read() if loc else cached_text("signor_9606", _cfgmod.db(CFG, "signor", "url"))
+    try:
+        txt = open(loc, encoding="utf-8", errors="replace").read() if loc else cached_text("signor_9606", _cfgmod.db(CFG, "signor", "url"))
+    except DownloadError as e:
+        print(f"{e}\n[SIGNOR] site unreachable -> falling back to the OmniPath mirror of SIGNOR")
+        return load_signor_omnipath()
     print(f"[SIGNOR] source: {loc or 'download'}")
     df = pd.read_csv(io.StringIO(txt), sep="\t", dtype=str, quoting=3, on_bad_lines="skip")
     # normalise header variants: 'ENTITYA' / 'ENTITY A' / 'entitya' / 'TAX_ID' / 'TAXID'
@@ -131,6 +137,42 @@ def load_signor(demo=False):
     out = out.sort_values(["effect", "score"], key=lambda s: (s == 0) if s.name == "effect" else -s.fillna(0)).drop_duplicates(["src", "dst"])
     print(f"[SIGNOR] rows {n_all} -> human {n_human} -> protein-protein unique edges {len(out)}"
           + (f" (SIGNOR score median {out.score.median():.2f})" if out.score.notna().any() else ""))
+    return out
+
+
+def load_signor_omnipath(license=None):
+    """
+    SIGNOR as mirrored by OmniPath (fallback when the SIGNOR site is down or no local file exists).
+    Interactions: directed + signed; residues merged from the enzyme-substrate endpoint.
+    Not available here: SIGNOR SCORE (edge weight falls back to the flat SIGNOR weight) and the DIRECT flag.
+    """
+    lic = license or _cfgmod.db(CFG, "regulon", "license") or "commercial"
+    q = {"resources": "SIGNOR", "organisms": 9606, "genesymbols": 1, "license": lic,
+         "fields": "sources,references,is_directed,is_stimulation,is_inhibition,curation_effort"}
+    url = OMNIPATH_URL + "?" + "&".join(f"{k}={v}" for k, v in q.items())
+    txt = cached_text(f"omnipath_signor_{lic}", url)
+    df = pd.read_csv(io.StringIO(txt), sep="\t")
+    df = df[df.get("is_directed", 1) == 1]
+    stim = pd.to_numeric(df.get("is_stimulation", 0), errors="coerce").fillna(0) == 1
+    inh = pd.to_numeric(df.get("is_inhibition", 0), errors="coerce").fillna(0) == 1
+    eff = np.where(stim & ~inh, 1, np.where(inh & ~stim, -1, 0))
+    out = pd.DataFrame({"src": df.source_genesymbol.str.upper(), "dst": df.target_genesymbol.str.upper(), "effect": eff,
+                        "mechanism": "", "residue": "", "source": "SIGNOR", "score": float("nan")})
+    # residues from the enzyme-substrate table
+    try:
+        eq = {"resources": "SIGNOR", "organisms": 9606, "genesymbols": 1, "license": lic, "fields": "residue_type,residue_offset,modification"}
+        etxt = cached_text(f"omnipath_enzsub_signor_{lic}", OMNIPATH_URL.replace("/interactions", "/enzsub") + "?" + "&".join(f"{k}={v}" for k, v in eq.items()))
+        es = pd.read_csv(io.StringIO(etxt), sep="\t")
+        es["res"] = es.residue_type.astype(str) + es.residue_offset.astype(str)
+        agg = es.groupby([es.enzyme_genesymbol.str.upper(), es.substrate_genesymbol.str.upper()]).agg(
+            residue=("res", lambda x: ";".join(sorted(set(x)))), mechanism=("modification", lambda x: ";".join(sorted(set(map(str, x)))))).reset_index()
+        agg.columns = ["src", "dst", "residue", "mechanism"]
+        out = out.drop(columns=["residue", "mechanism"]).merge(agg, on=["src", "dst"], how="left")
+        out["residue"] = out.residue.fillna(""); out["mechanism"] = out.mechanism.fillna("")
+    except Exception as e:
+        print(f"[SIGNOR/OmniPath] residues not merged: {e.__class__.__name__}")
+    out = out[(out.src != out.dst)].sort_values("effect", key=lambda s: s == 0).drop_duplicates(["src", "dst"])
+    print(f"[SIGNOR] source: OmniPath mirror (license={lic}) -> {len(out)} directed edges (no SCORE/DIRECT columns)")
     return out
 
 

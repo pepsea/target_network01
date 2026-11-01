@@ -34,7 +34,8 @@ else (cd "$HERE" && python fetch_depmap.py --out "$ROOT/depmap"); fi
 echo "[1] SIGNOR"
 if ls "$ROOT"/signor/all_data_*.tsv >/dev/null 2>&1 || [ -s "$ROOT/signor/signor_human.tsv" ]; then echo "  [skip] SIGNOR file exists";
 else echo "  [get ] per-organism dump (or download 'all data' manually from https://signor.uniroma2.it/downloads.php)";
-     curl -L --fail --retry 3 -o "$ROOT/signor/signor_human.tsv" "https://signor.uniroma2.it/getData.php?organism=9606"; fi
+     curl -L --fail --retry 3 -o "$ROOT/signor/signor_human.tsv" "https://signor.uniroma2.it/getData.php?organism=9606" \
+       || echo "  [warn] SIGNOR site unreachable - the pipeline falls back to the OmniPath mirror automatically (set databases.signor.source: omnipath to force it)"; fi
 
 echo "[2] Reactome FI"
 if ls "$ROOT"/reactome/FIsInGene_*_with_annotations.txt* >/dev/null 2>&1; then echo "  [skip] Reactome FI file exists";

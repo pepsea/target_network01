@@ -26,7 +26,7 @@ Expected textbook recovery: AKT1 upstream -> RTKs via PI3K/PDPK1; MAPK1 x AKT1 -
 
 ## Open items
 - Live-data calibration (AKT1, 2026-11-01): SIGNOR 15,428 direct+indirect pp edges; Reactome FI 'mechanistic' still 109k -> default mode=context; SIGNOR DIRECT=NO dropped; walk defaults max_depth 5 / min_score 0.2. Re-check: upstream/downstream node counts should land ~100-400; receptors for AKT1 via PIK3CA/PDPK1
-- SIGNOR complexes / protein families: expand to member proteins (currently dropped by load_signor)
+- SIGNOR complexes / protein families: expand to member proteins (currently dropped by load_signor); membership available offline-free via OmniPath `complexes?resources=SIGNOR`
 - Chaperone/client edge layer (Taipale 2012, Picard list) beyond SIGNOR
 - Cross-talk baseline: same target vs several unrelated core genes
 - Boolean/logic simulation of the signed graph

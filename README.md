@@ -113,6 +113,9 @@ win. Default is now `mode: context` (walk on SIGNOR direct relations only; React
 `mode: directed` still contributed 109k directed FIs vs 15k SIGNOR edges and the AKT1 upstream walk reached 2,667 nodes.
 
 ## SIGNOR input
+If the SIGNOR site is down and no local file exists, the loader falls back to the **OmniPath mirror of SIGNOR** automatically
+(`databases.signor.source: omnipath` forces it). The mirror has direction, sign, references and residues (enzyme-substrate
+table) but not SIGNOR's SCORE / DIRECT columns, so edge weights are flat (0.9) and the indirect-relation filter cannot apply.
 Either the API dump or SIGNOR's full download `all_data_DD_MM_YY.tsv` works (`databases.signor.path`). The full file is
 filtered to human (TAX_ID 9606) protein→protein rows; the SIGNOR confidence `SCORE` scales the edge weight (×0.6–1.0).
 Relations with `DIRECT = NO` (pathway-level statements such as "PDGFRA up-regulates AKT1") are dropped by default
