@@ -210,7 +210,9 @@ def crosstalk(G, causal_df, goi_df, causal, goi, causal_genes=None, goi_genes=No
                 inter.append(dict(from_node=u, to_node=v, hops_goi_to_from=hX[u], hops_causal_to_to=hC[v], edge_effect=e["effect"],
                                   residue=e["residue"], mechanism=e["mechanism"], db=e["source"], net_effect_of_goi_on_target=net,
                                   causal_effect_on_target=sC[v], agreement=_agree(sC[v], net), via_feedback_loop=u in anc_X))
-    inter_df = pd.DataFrame(inter)
+    INTER_COLS = ["rank", "from_node", "to_node", "hops_goi_to_from", "hops_causal_to_to", "edge_effect", "residue", "mechanism", "db",
+                  "net_effect_of_goi_on_target", "causal_effect_on_target", "agreement", "via_feedback_loop", "weight", "proximity"]
+    inter_df = pd.DataFrame(inter) if inter else pd.DataFrame(columns=INTER_COLS)
     if len(inter_df):   # rank: proximal interference first (few hops on both sides), then edge weight
         inter_df["weight"] = [G[a][b]["weight"] for a, b in zip(inter_df.from_node, inter_df.to_node)]
         inter_df["proximity"] = inter_df.hops_goi_to_from + inter_df.hops_causal_to_to
@@ -248,8 +250,12 @@ def crosstalk(G, causal_df, goi_df, causal, goi, causal_genes=None, goi_genes=No
                    goi_coverage_of_all_tfs=round(nX / M, 3) if M else None,
                    synergistic=agreements.count("synergistic"), antagonistic=agreements.count("antagonistic"),
                    mixed=agreements.count("mixed"), low_confidence=agreements.count("low-confidence"))
-    return dict(shared=pd.DataFrame(shared_rows), interference=inter_df, tf_agreement=pd.DataFrame(tf_rows),
-                gene_agreement=pd.DataFrame(gene_rows), summary=summary)
+    # empty tables keep their columns so notebook cells (sort / select) never fail on a pair with no overlap
+    SHARED_COLS = ["node", "hops_from_causal", "hops_from_goi", "sign_from_causal", "sign_from_goi", "conf_causal", "conf_goi", "agreement"]
+    GENE_COLS = ["gene", "tf_from_causal", "tf_from_goi", "sign_from_causal", "sign_from_goi", "agreement"]
+    mk = lambda rows, cols: pd.DataFrame(rows) if rows else pd.DataFrame(columns=cols)
+    return dict(shared=mk(shared_rows, SHARED_COLS), interference=inter_df, tf_agreement=mk(tf_rows, SHARED_COLS),
+                gene_agreement=mk(gene_rows, GENE_COLS), summary=summary)
 
 
 def _agree(a, b):
