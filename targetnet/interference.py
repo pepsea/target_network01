@@ -90,7 +90,7 @@ def interference_flow(G, core_df, core, target, target_df, genes_df=None, max_de
     edges = pd.DataFrame(entry_edges)
     if len(edges): edges = edges.reindex(edges.entry_strength.abs().sort_values(ascending=False).index).reset_index(drop=True)
     n_tf = int(nodes.is_tf.sum()); ch = nodes[(nodes.is_tf) & (nodes.direction != "unchanged")]
-    tfd = nodes[nodes.is_tf].delta; d_down = float(-tfd[tfd < 0].sum()); d_up = float(tfd[tfd > 0].sum())
+    tfd = nodes[nodes.is_tf].delta; d_down = abs(float(tfd[tfd < 0].sum())); d_up = float(tfd[tfd > 0].sum())
     summary = dict(core=core, target=target, core_nodes=N - 1, core_tfs=n_tf, entry_points=len(entry), entry_edges=len(edges),
                    nodes_changed=int((nodes.direction != "unchanged").sum()), nodes_decreased=int((nodes.direction == "decreased").sum()),
                    nodes_increased=int((nodes.direction == "increased").sum()), tfs_changed=len(ch),
@@ -126,12 +126,14 @@ def screen_targets(G, core, core_df, core_genes, targets, tfs, max_depth=5, min_
         H = G.copy()
         if core in H: H.remove_node(core)
         if X not in H: return None
+        from . import data as Dt
+        Wk.prepare_seed(H, X, "down", Dt.CFG, Dt.REACTOME_DIRECTED)      # same seed handling as pathway-interference (seed rescue)
         dX = Wk.signed_walk(H, X, tfs, direction="down", max_depth=max_depth, min_score=min_score, hub_strength=hub_strength,
                             stop_at_endpoints=not through_tf, score_mode=score_mode)
         res = interference_flow(G, core_df, core, X, dX, genes_df=core_genes, max_depth=max_depth, hub_strength=hub_strength)
         s_ = res["summary"]; nd = res["nodes"]; tf = nd[nd.is_tf]
         ch = tf[tf.direction != "unchanged"]
-        d_down = float(-tf.delta[tf.delta < 0].sum()); d_up = float(tf.delta[tf.delta > 0].sum())
+        d_down = abs(float(tf.delta[tf.delta < 0].sum())); d_up = float(tf.delta[tf.delta > 0].sum())
         row = dict(target=X, target_nodes=len(dX), entry_points=s_["entry_points"], entry_edges=s_["entry_edges"],
                    direct_entries=int((nd.entry == "direct").sum()), nodes_changed=s_["nodes_changed"],
                    tfs_changed=s_["tfs_changed"], tfs_down=s_["tfs_decreased"], tfs_up=s_["tfs_increased"], flow_change_index=s_["flow_change_index"],
