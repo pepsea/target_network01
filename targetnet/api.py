@@ -219,14 +219,18 @@ def research_pathway_interference(core, target, **options):
                 flow_change=_read(f"{out}/flow_change.csv"), flow_change_genes=_read(f"{out}/flow_change_genes.csv"), entry_edges=_read(f"{out}/entry_edges.csv"),
                 core_nodes=_read(f"{root}/downstream/downstream_nodes.csv"), core_tfs=_read(f"{root}/downstream/transcription_factors.csv"),
                 target_genes=_read(f"{root}/downstream/target_genes.csv"),
-                views=dict(cell_flow=f"{out}/cell_flow.html", cell_flow_inhibition=f"{out}/cell_flow_inhibition.html",
-                           core_flow=f"{root}/downstream/flow.html", core_hop1=f"{root}/downstream/hop1.html"))
+                overlap_nodes=_read(f"{out}/overlap_nodes.csv"), overlap_edges=_read(f"{out}/overlap_edges.csv"),
+                target_nodes=_read(f"{root}/downstream_{cli.resolve_symbol(target)}/downstream_nodes.csv"),
+                views=dict(cell_flow=f"{out}/cell_flow.html", cell_flow_target=f"{out}/cell_flow_target.html", cell_flow_overlap=f"{out}/cell_flow_overlap.html",
+                           cell_flow_inhibition=f"{out}/cell_flow_inhibition.html", core_flow=f"{root}/downstream/flow.html", core_hop1=f"{root}/downstream/hop1.html",
+                           target_flow=f"{root}/downstream_{cli.resolve_symbol(target)}/flow.html"))
 
 
 def summarize_pathway_interference(p, n=12):
     s = p["summary"]; fc = p["flow_change"]
     lines = [f"== {p['core']} network, {p['target']} inhibited ==",
-             f"CORE network: {s['core_nodes']} nodes, {s['core_tfs']} TFs; {p['target']} {'is on the network' if s['target_in_core_network'] else 'acts from outside'}",
+             f"CORE network: {s['core_nodes']} nodes, {s['core_tfs']} TFs; TARGET network (same walk): {len(p.get('target_nodes', []))} nodes; "
+             f"shared {len(p.get('overlap_nodes', []))} nodes; {len(p.get('overlap_edges', []))} edges from the TARGET network into the CORE network",
              f"entry: {s['entry_points']} nodes receive {s['entry_edges']} edges from {p['target']}'s side",
              f"change: {s['nodes_changed']} nodes ({s['nodes_decreased']} down / {s['nodes_increased']} up); TFs {s['tfs_changed']}/{s['core_tfs']} "
              f"({s['tfs_decreased']} down / {s['tfs_increased']} up); genes {s['genes_down']} down / {s['genes_up']} up; flow-change index {s['flow_change_index']}"]

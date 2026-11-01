@@ -45,6 +45,10 @@ CAPTIONS = {
   "LAYOUT  cell cross-section of the CORE network: secreted ligands (top), membrane proteins (hop ≤ 1), cytosolic intermediates (row = hop from CORE), nucleus = transcription factors and nuclear proteins (bottom).",
   "LINES   thin grey curve = signaling edge (▶ activation, ┃ inhibition, dotted = unknown sign). NODES black diamond = CORE · blue = TF · grey = intermediate; outline green = activated by CORE, red = inhibited.",
   "GENES   count under each TF = DoRothEA target genes (↑ induced / ↓ repressed by CORE); hover for the list. Per-hop node cap applies (view: max_nodes); tables hold everything."],
+ "cell_flow_overlap": [
+  "OVERLAP  the CORE network (layout as in the cross-section view) with the TARGET network, computed with the SAME walk, laid over it: purple = node reached by both (shared), tan = CORE node receiving an edge from the TARGET network, grey = CORE only.",
+  "MARGIN   orange nodes on the left = TARGET (diamond) and TARGET-network nodes outside the CORE network that act on it; brown straight edges = those actions (hover the midpoint for mechanism / residue). Tables: overlap_nodes.csv, overlap_edges.csv; the TARGET network itself: cell_flow_target.html.",
+  "READ     shared nodes and tan nodes are WHERE the two pathways meet; the inhibition view says in WHICH DIRECTION the flow changes there."],
  "cell_flow_pert": [
   "PERTURBATION  the same CORE network, coloured by the predicted change when the TARGET is INHIBITED: blue = activity decreases, red = increases, grey = unchanged; size ∝ |delta|; black outline = direct entry point.",
   "ENTRY   orange nodes in the left margin = TARGET (diamond) and the TARGET-side nodes that act on the CORE network; their straight edges are blue (receiving node decreases) or red (increases). Hover an edge midpoint for mechanism / residue.",
@@ -491,8 +495,12 @@ def cell_flow_figure(json_path, width=1100, height=820, max_nodes=None, focus=No
     if max_nodes is None: max_nodes = _view_cfg("max_nodes", 150)
     fset, fvals = parse_focus(focus); fset_or_none = fset if focus is not None else None
     pert = F.get("perturbation")
-    keep_ids = set(pert["nodes"].keys()) & {n["id"] for n in F["nodes"]} if pert else set()
-    keep_ids = {k for k in keep_ids if pert["nodes"][k]["entry"] == "direct"}          # direct entry points always drawn
+    overlap = bool(pert and pert.get("mode") == "overlap")
+    if overlap:
+        keep_ids = set(pert["shared"]) | {e["to_node"] for e in pert["edges"]}
+    else:
+        keep_ids = set(pert["nodes"].keys()) & {n["id"] for n in F["nodes"]} if pert else set()
+        keep_ids = {k for k in keep_ids if pert["nodes"][k]["entry"] == "direct"}      # direct entry points always drawn
     nodes, edges, capped = _cap_nodes(F["nodes"], F["edges"], max_nodes, keep_ids=keep_ids, per_hop=True)
     byid = {n["id"]: n for n in nodes}
     # ---- layout: band by compartment, row by hop inside the band, x by barycenter of predecessors
@@ -532,7 +540,10 @@ def cell_flow_figure(json_path, width=1100, height=820, max_nodes=None, focus=No
             pos[n["id"]] = (x, y - line * 3.2)
     rad = lambda nid: 2.0 if byid[nid]["cls"] == "seed" else 0.9 + 1.3 * byid[nid].get("score", 0.5)
     title = f"{F['seed']} network as a cell cross-section — {F.get('subtitle', '')}"
-    if pert: title = f"predicted change of the {F['seed']} network when {pert['target']} is inhibited — {pert['summary'].get('tfs_changed', 0)}/{pert['summary'].get('core_tfs', 0)} TFs change ({pert['summary'].get('tfs_decreased', 0)} down, {pert['summary'].get('tfs_increased', 0)} up)"
+    if overlap:
+        so = pert["summary"]
+        title = f"overlap of the {pert['target']} network on the {F['seed']} network — shared {so['shared_nodes']} nodes ({so['shared_tfs']} TFs), Jaccard {so['jaccard']}, {so['edges_into_core']} edges from {pert['target']}'s network into {F['seed']}'s"
+    elif pert: title = f"predicted change of the {F['seed']} network when {pert['target']} is inhibited — {pert['summary'].get('tfs_changed', 0)}/{pert['summary'].get('core_tfs', 0)} TFs change ({pert['summary'].get('tfs_decreased', 0)} down, {pert['summary'].get('tfs_increased', 0)} up)"
     fig = _base(title, width, height)
     for name, yt, yb in _BANDS:
         fig.add_shape(type="rect", x0=0, x1=100, y0=yb - 1.5, y1=yt + 1.5, line=dict(width=0), fillcolor="#f4f6f8" if name in ("membrane", "nucleus") else "#ffffff", layer="below")
@@ -544,7 +555,36 @@ def cell_flow_figure(json_path, width=1100, height=820, max_nodes=None, focus=No
                        f"{'activates' if n.get('sign') == 1 else 'inhibits' if n.get('sign') == -1 else 'mixed'}" + ("<br>TF" if n.get("is_endpoint") else "")
                        + f"<br>{n.get('best_path', '')}")
     outline = lambda n: COL["syn"] if n.get("sign") == 1 else COL["ant"] if n.get("sign") == -1 else COL["mix"]
-    if not pert:
+    if overlap:
+        shared = set(pert["shared"]); hit = {e["to_node"] for e in pert["edges"]}
+        ocol = lambda n: COL["shared"] if n["id"] in shared else ("#d9c4a8" if n["id"] in hit else "#e6e6e6")
+        oline = lambda n: "#111" if n.get("is_endpoint") else "#888"
+        ohover = lambda n: hover(n) + ("<br><b>SHARED: also in the " + pert["target"] + " network</b>" if n["id"] in shared else
+                                      ("<br><b>receives an edge from the " + pert["target"] + " network</b>" if n["id"] in hit else "<br>" + F["seed"] + " network only"))
+        _node_trace(fig, [seed], pos, rad, lambda n: COL["seed"], lambda n: "#111", hover, "CORE")
+        _node_trace(fig, [n for n in nodes if n is not seed], pos, rad, ocol, oline, ohover,
+                    f"purple = shared with the {pert['target']} network · tan = receives an edge from it · grey = {F['seed']} network only; black outline = TF", line_w=1.4, label_size=9)
+        ent = [e for e in pert["edges"] if e["to_node"] in pos]
+        srcs = sorted({e["from_node"] for e in ent if e["from_node"] not in pos}, key=lambda u: min(e["hops_target_to_from"] for e in ent if e["from_node"] == u))
+        used = []
+        for u in srcs:
+            y = pos[next(e for e in ent if e["from_node"] == u)["to_node"]][1]
+            while any(abs(y - v) < 3.2 for v in used): y -= 3.2
+            used.append(y); pos[u] = (6, y)
+        if srcs:
+            fig.add_trace(go.Scatter(x=[pos[u][0] for u in srcs], y=[pos[u][1] for u in srcs], mode="markers+text", text=[f"<b>{u}</b>" if u == pert["target"] else u for u in srcs],
+                                     textposition="middle left", textfont=dict(size=9, color="#9A4B00"),
+                                     marker=dict(size=[13 if u == pert["target"] else 9 for u in srcs], symbol=["diamond" if u == pert["target"] else "circle" for u in srcs], color="#E8862E", line=dict(color="#9A4B00", width=1.5)),
+                                     hovertext=[f"<b>{u}</b> — {pert['target']} network (hop {min(e['hops_target_to_from'] for e in ent if e['from_node'] == u)}); acts on " + ", ".join(sorted({e['to_node'] for e in ent if e['from_node'] == u})) for u in srcs],
+                                     hoverinfo="text", name=f"{pert['target']} network nodes acting on the {F['seed']} network (left margin)", showlegend=True))
+        xs, ys2 = [], []
+        for e in ent:
+            if e["from_node"] in pos: xs += [pos[e["from_node"]][0], pos[e["to_node"]][0], None]; ys2 += [pos[e["from_node"]][1], pos[e["to_node"]][1], None]
+        if xs: fig.add_trace(go.Scatter(x=xs, y=ys2, mode="lines", line=dict(color="#b36b3c", width=1.1), opacity=0.8, hoverinfo="skip", name=f"edge from the {pert['target']} network into the {F['seed']} network"))
+        mx = [(pos[e["from_node"]][0] + pos[e["to_node"]][0]) / 2 for e in ent if e["from_node"] in pos]; my = [(pos[e["from_node"]][1] + pos[e["to_node"]][1]) / 2 for e in ent if e["from_node"] in pos]
+        fig.add_trace(go.Scatter(x=mx, y=my, mode="markers", marker=dict(size=5, color="#b36b3c"), hoverinfo="text", showlegend=False,
+                                 hovertext=[f"{e['from_node']} → {e['to_node']}: {e['mechanism']} {e['residue']} (effect {e['edge_effect']:+d}; {pert['target']}→{e['from_node']} sign {e['sign_target_to_from']:+d})" for e in ent if e["from_node"] in pos]))
+    elif not pert:
         fk = dict(focus=fset_or_none, values=fvals)
         _node_trace(fig, [seed], pos, rad, lambda n: COL["seed"], lambda n: "#111", hover, "seed (CORE)", **fk)
         _node_trace(fig, [n for n in nodes if n is not seed and n.get("is_endpoint")], pos, rad, lambda n: COL["endpoint"], outline, hover, "TF; outline green = activated by CORE, red = inhibited", line_w=2.0, label_size=9, **fk)
@@ -596,7 +636,8 @@ def cell_flow_figure(json_path, width=1100, height=820, max_nodes=None, focus=No
         per = defaultdict(list)
         for g in F["genes"]:
             if g["tf"] in pos: per[g["tf"]].append(g)
-        gd = pert["genes"] if pert else {}
+        gd = pert["genes"] if (pert and not overlap) else {}
+        if overlap: pert = None     # gene counts as in the baseline view
         xs, ys3, txt, hv = [], [], [], []
         for tf, gs in per.items():
             up = sum(g["sign"] == 1 for g in gs); dn = sum(g["sign"] == -1 for g in gs)
@@ -610,7 +651,7 @@ def cell_flow_figure(json_path, width=1100, height=820, max_nodes=None, focus=No
         fig.add_trace(go.Scatter(x=xs, y=ys3, mode="text", text=txt, textposition="bottom center", textfont=dict(size=8, color="#555"), hovertext=hv, hoverinfo="text", name="DoRothEA target genes (hover)", showlegend=True))
     fig.update_xaxes(range=[-1, 101]); fig.update_yaxes(range=[0, 100])
     _edge_legend(fig, ("act", "inh", "amb"))
-    if caption: add_caption(fig, "cell_flow_pert" if pert else "cell_flow")
+    if caption: add_caption(fig, "cell_flow_overlap" if overlap else ("cell_flow_pert" if pert else "cell_flow"))
     return fig
 
 

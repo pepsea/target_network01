@@ -212,9 +212,9 @@ def run_upstream(args):
 
 
 # ----------------------------------------------------------------------------- mode: downstream
-def run_downstream(args, gene=None, quiet=False, exclude=(), G=None, und=None):
+def run_downstream(args, gene=None, quiet=False, exclude=(), G=None, und=None, tag=None):
     gene = resolve_symbol(gene or args.gene)
-    out = os.path.join(run_dir(args, f"downstream_{gene}"), ("downstream" if not exclude else f"downstream_{gene}_without_" + "_".join(exclude))); os.makedirs(out, exist_ok=True)
+    out = os.path.join(run_dir(args, f"downstream_{gene}"), tag or ("downstream" if not exclude else f"downstream_{gene}_without_" + "_".join(exclude))); os.makedirs(out, exist_ok=True)
     if G is None: G, und = build_signaling(args)
     if exclude:   # cross-talk: influence of this gene that does NOT pass through the other gene
         G = G.copy(); G.remove_nodes_from([e for e in exclude if e in G])
@@ -290,8 +290,33 @@ def run_pathway_interference(args):
     for n in cell["nodes"]: n.setdefault("compartment", "cytosol")
     cell["subtitle"] = f"{len(dC)} nodes, {int(dC.is_endpoint.sum())} TFs within {args.max_depth} hops (min_score {args.min_score}); {gC.gene.nunique() if len(gC) else 0} DoRothEA genes"
     write_html("flow.html", "/*__FLOW_JSON__*/", cell, os.path.join(out, "cell_flow.html"), d3=False)
-    # step 2: TARGET's reach (CORE removed, so only TARGET's own routes count) and the inhibition perturbation
+    # step 2: TARGET network with the SAME calculation as CORE (full graph, same thresholds) -> downstream_X/ + its own cross-section
+    _, dXfull, gX = run_downstream(args, gene=X, quiet=True, G=G, und=und, exclude=(), tag=f"downstream_{X}")
+    cellX = json.load(open(os.path.join(root, f"downstream_{X}", "flow.json")))
+    for n in cellX["nodes"]: n.setdefault("compartment", "cytosol")
+    cellX["subtitle"] = f"{len(dXfull)} nodes, {int(dXfull.is_endpoint.sum())} TFs (same walk as CORE)"
+    write_html("flow.html", "/*__FLOW_JSON__*/", cellX, os.path.join(out, "cell_flow_target.html"), d3=False)
+    # step 3: overlap of the two networks on the CORE cross-section (shared nodes, TARGET-network edges into CORE-network nodes)
     tfs = D.load_tfs(args.demo)
+    shared = sorted((set(dXfull.node) | {X}) & (set(dC.node) | {C}) - {C})
+    sXf = dict(zip(dXfull.node, dXfull.sign)); sXf[X] = 1; hXf = dict(zip(dXfull.node, dXfull.hops)); hXf[X] = 0
+    cs = set(dC.node) | {C}; xs_ = set(dXfull.node) | {X}
+    xedges = [dict(from_node=u, to_node=v, hops_target_to_from=int(hXf[u]), sign_target_to_from=int(sXf[u]), edge_effect=int(d["effect"]),
+                   mechanism=d.get("mechanism", ""), residue=d.get("residue", ""), db=d.get("source", ""), weight=round(d["weight"], 3))
+              for u in xs_ for v, d in ((v, G[u][v]) for v in G.successors(u)) if v in cs and (u not in cs or u == X)]
+    ov = pd.DataFrame(xedges); ov.to_csv(os.path.join(out, "overlap_edges.csv"), index=False)
+    sh = pd.DataFrame(dict(node=shared, hops_from_core=[int(dC.set_index("node").hops.get(n, 0)) for n in shared], hops_from_target=[int(hXf[n]) for n in shared],
+                           sign_from_core=[int(dC.set_index("node").sign.get(n, 0)) for n in shared], sign_from_target=[int(sXf[n]) for n in shared],
+                           is_tf=[n in tfs for n in shared]))
+    sh.to_csv(os.path.join(out, "overlap_nodes.csv"), index=False)
+    jacc = len(shared) / max(1, len(cs | xs_) - 2)
+    overlap = dict(target=X, mode="overlap", shared=shared, edges=xedges, summary=dict(shared_nodes=len(shared), shared_tfs=int(sh.is_tf.sum()) if len(sh) else 0,
+                   core_nodes=len(dC), target_nodes=len(dXfull), jaccard=round(jacc, 3), edges_into_core=len(xedges)))
+    write_html("flow.html", "/*__FLOW_JSON__*/", dict(cell, perturbation=overlap), os.path.join(out, "cell_flow_overlap.html"), d3=False)
+    print(f"[overlap] {X} network {len(dXfull)} nodes vs {C} network {len(dC)} nodes: shared {len(shared)} ({int(sh.is_tf.sum()) if len(sh) else 0} TFs), "
+          f"Jaccard {jacc:.3f}; {len(xedges)} edges from {X}'s network into {C}'s network")
+    # step 4: inhibition perturbation. Entry effects use TARGET's influence computed WITHOUT CORE (otherwise every node TARGET reaches
+    # through CORE would be counted twice: once as 'shared' and again via propagation from CORE)
     H = G.copy(); H.remove_nodes_from([C] if C in H else [])
     Wk.prepare_seed(H, X, "down", D.CFG, D.REACTOME_DIRECTED)
     dX = Wk.signed_walk(H, X, tfs, direction="down", max_depth=args.max_depth, min_score=args.min_score, hub_strength=args.hub_penalty,
@@ -308,7 +333,7 @@ def run_pathway_interference(args):
     cellp = dict(cell, perturbation=pert)
     write_html("flow.html", "/*__FLOW_JSON__*/", cellp, os.path.join(out, "cell_flow_inhibition.html"), d3=False)
     s_ = res["summary"]
-    print(f"\n[pathway] {C} network: {s_['core_nodes']} nodes, {s_['core_tfs']} TFs -> {root}/downstream/ and {out}/cell_flow.html")
+    print(f"\n[pathway] {C} network: {s_['core_nodes']} nodes, {s_['core_tfs']} TFs -> {root}/downstream/ and {out}/cell_flow.html; {X} network -> {root}/downstream_{X}/ and {out}/cell_flow_target.html")
     print(f"[interference] inhibiting {X}: {s_['entry_points']} entry points ({s_['entry_edges']} edges from {X}'s side); "
           f"{s_['nodes_changed']} nodes change ({s_['nodes_decreased']} down / {s_['nodes_increased']} up); TFs {s_['tfs_changed']}/{s_['core_tfs']} "
           f"({s_['tfs_decreased']} down / {s_['tfs_increased']} up); genes {s_['genes_down']} down / {s_['genes_up']} up; flow-change index {s_['flow_change_index']}"
