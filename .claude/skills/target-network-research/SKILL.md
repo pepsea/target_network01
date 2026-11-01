@@ -55,6 +55,7 @@ All database paths are read from a YAML file, searched in this order: `--config`
 Copy the template to the user's working folder as `research_<GENE>.ipynb` or `crosstalk_<CORE>_<TARGET>.ipynb`.
 Edit **only the parameters cell**: `GENE` (or `CORE`, `TARGET`), `CONFIG`, `DEMO = False`, `TISSUE` (HPA tissue name for
 the disease context, else `None`), `TARGET_NET_DIR` (relative path to the folder containing `target_net.py`).
+If the user supplies a gene list of interest (proteomics hits, a panel, candidates), set `FOCUS` to it (list, file with optional value column, or dict gene→value) so those genes are highlighted and the rest greyed in every network figure.
 Leave `MAX_DEPTH / MIN_SCORE / HUB_PENALTY = None` so values come from the YAML `walk:` section unless the user asks to tune them.
 
 Conventions (user's standing preferences):

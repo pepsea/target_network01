@@ -96,19 +96,82 @@ def _cap_nodes(nodes, edges, max_nodes, keep_ids=()):
     return nodes, edges, True
 
 
-def _node_trace(fig, nodes, pos, rad, fill, line_col, hover, name, line_w=1.5, dash=None, show=True):
+def parse_focus(focus):
+    """focus: None | list/set of gene symbols | path to a text file (one symbol per line, optional 2nd column = value)
+       | dict {gene: value} | pandas Series (index = gene). Returns (set_of_genes, {gene: value} or {})."""
+    if focus is None: return set(), {}
+    try:
+        import pandas as pd
+        if isinstance(focus, pd.Series): focus = focus.to_dict()
+        elif isinstance(focus, pd.DataFrame): focus = dict(zip(focus.iloc[:, 0], focus.iloc[:, 1])) if focus.shape[1] > 1 else list(focus.iloc[:, 0])
+    except ImportError:
+        pass
+    if isinstance(focus, str):
+        vals = {}
+        for line in open(focus):
+            parts = line.replace(",", "\t").split("\t")
+            g = parts[0].strip().upper()
+            if not g or g.startswith("#"): continue
+            try: vals[g] = float(parts[1]) if len(parts) > 1 and parts[1].strip() else None
+            except ValueError: vals[g] = None
+        return set(vals), {g: v for g, v in vals.items() if v is not None}
+    if isinstance(focus, dict):
+        d = {str(k).upper(): v for k, v in focus.items()}
+        return set(d), {g: float(v) for g, v in d.items() if v is not None}
+    return {str(g).upper() for g in focus}, {}
+
+
+def _value_colour(v, vmax):
+    """diverging blue (negative) - light grey (0) - red (positive), symmetric around 0."""
+    if vmax == 0: return COL["goi"]
+    t = max(-1.0, min(1.0, v / vmax))
+    if t >= 0: r, g, b = 220, int(220 - 160 * t), int(220 - 170 * t)
+    else: r, g, b = int(220 + 150 * t), int(220 + 100 * t), 220
+    return f"rgb({r},{g},{b})"
+
+
+def _node_trace(fig, nodes, pos, rad, fill, line_col, hover, name, line_w=1.5, dash=None, show=True, focus=None, values=None):
+    """focus = set of highlighted genes (None = no focus mode). In focus mode non-focus nodes are small grey dots without labels."""
     if not nodes: return
-    fig.add_trace(go.Scatter(x=[pos[n["id"]][0] for n in nodes], y=[pos[n["id"]][1] for n in nodes], mode="markers+text",
-                             text=[n["id"] for n in nodes], textposition="middle right", textfont=dict(size=10),
-                             marker=dict(size=[rad(n["id"]) * 7 for n in nodes], color=[fill(n) for n in nodes],
-                                         line=dict(color=[line_col(n) for n in nodes], width=line_w)),
-                             hovertext=[hover(n) for n in nodes], hoverinfo="text", name=name, showlegend=show))
+    if focus is None:
+        fig.add_trace(go.Scatter(x=[pos[n["id"]][0] for n in nodes], y=[pos[n["id"]][1] for n in nodes], mode="markers+text",
+                                 text=[n["id"] for n in nodes], textposition="middle right", textfont=dict(size=10),
+                                 marker=dict(size=[rad(n["id"]) * 7 for n in nodes], color=[fill(n) for n in nodes],
+                                             line=dict(color=[line_col(n) for n in nodes], width=line_w)),
+                                 hovertext=[hover(n) for n in nodes], hoverinfo="text", name=name, showlegend=show))
+        return
+    values = values or {}; vmax = max([abs(v) for v in values.values()] or [0])
+    hi = [n for n in nodes if n["id"] in focus or n.get("cls") == "seed"]; lo = [n for n in nodes if n not in hi]
+    if lo:
+        fig.add_trace(go.Scatter(x=[pos[n["id"]][0] for n in lo], y=[pos[n["id"]][1] for n in lo], mode="markers",
+                                 marker=dict(size=6, color="#d5d5d5", line=dict(width=0)), hovertext=[hover(n) for n in lo], hoverinfo="text",
+                                 name=f"{name} (not in focus list)", showlegend=show))
+    if hi:
+        col = [(_value_colour(values[n["id"]], vmax) if n["id"] in values else fill(n)) for n in hi]
+        fig.add_trace(go.Scatter(x=[pos[n["id"]][0] for n in hi], y=[pos[n["id"]][1] for n in hi], mode="markers+text",
+                                 text=[f"<b>{n['id']}</b>" + (f" {values[n['id']]:+.2f}" if n["id"] in values else "") for n in hi],
+                                 textposition="middle right", textfont=dict(size=11),
+                                 marker=dict(size=[rad(n["id"]) * 9 for n in hi], color=col, line=dict(color="#111", width=2)),
+                                 hovertext=[hover(n) + (f"<br>focus value {values[n['id']]:+.3f}" if n["id"] in values else "<br>focus gene") for n in hi],
+                                 hoverinfo="text", name=f"{name} — focus" + (" (colour = value)" if values else ""), showlegend=show))
+
+
+def _focus_edge_style(focus):
+    """Edges touching a focus gene keep their colour; others fade."""
+    if focus is None: return None
+    def col(e):
+        a, b = e.get("source", e.get("from_node")), e.get("target", e.get("to_node"))
+        base = COL["amb"] if e.get("effect", 1) == 0 else COL["edge"]
+        return base if (a in focus or b in focus) else "#e3e3e3"
+    return col
 
 
 # --------------------------------------------------------------------------- flow (upstream / downstream)
-def flow_figure(json_path, width=1000, height=650, max_nodes=150):
+def flow_figure(json_path, width=1000, height=650, max_nodes=150, focus=None):
+    """focus: genes to highlight (list / file / dict gene->value); other nodes become small grey dots."""
     F = _load(json_path)
-    nodes, edges, capped = _cap_nodes(F["nodes"], F["edges"], max_nodes)
+    fset, fvals = parse_focus(focus); fset_or_none = fset if focus is not None else None
+    nodes, edges, capped = _cap_nodes(F["nodes"], F["edges"], max_nodes, keep_ids=fset)
     F["edges"] = edges; byid = {n["id"]: n for n in nodes}
     if capped: F["subtitle"] = f"showing top {max_nodes} of {len(F['nodes'])} nodes by path score (full table in CSV / D3 view). " + F.get("subtitle", "")
     F["genes"] = [g for g in F.get("genes", []) if g["tf"] in byid]
@@ -130,16 +193,18 @@ def flow_figure(json_path, width=1000, height=650, max_nodes=150):
         for i, n in enumerate(arr): pos[n["id"]] = (col_x(c), 95 - step * (i + 0.5))
     rad = lambda nid: 2.2 if byid[nid]["cls"] == "seed" else 1.0 + 1.6 * byid[nid]["score"]
     fig = _base(f"{F['mode']} pathway of {F['seed']}  —  {F.get('subtitle', '')}", width, max(height, 14 * max(len(a) for a in [[n for n in nodes if n['col'] == c] for c in range(ncol)])))
-    _edge_traces(fig, F["edges"], pos, rad)
+    _edge_traces(fig, F["edges"], pos, rad, color_fn=_focus_edge_style(fset_or_none))
+    if focus is not None: fig.update_layout(title_text=fig.layout.title.text + f"  |  focus: {len(fset & set(byid))}/{len(fset)} focus genes in view")
     hover = lambda n: (f"<b>{n['id']}</b><br>hops {n['hops']} · path score {n['score']:.2f}<br>net sign: "
                        f"{'activated' if n['sign'] == 1 else 'inhibited' if n['sign'] == -1 else 'mixed'}"
                        + ("<br>endpoint" if n.get("is_endpoint") else "") + ("<br>feedback node" if n.get("feedback") else "")
                        + (f"<br>co-essentiality r {n['coess']}" if n.get("coess") not in (None, "") else "") + f"<br>{n.get('best_path', '')}")
     outline = lambda n: COL["syn"] if n["sign"] == 1 else COL["ant"] if n["sign"] == -1 else COL["mix"]
-    _node_trace(fig, [n for n in nodes if n["cls"] == "seed"], pos, rad, lambda n: COL["seed"], lambda n: "#111", hover, "seed")
+    fk = dict(focus=fset_or_none, values=fvals)
+    _node_trace(fig, [n for n in nodes if n["cls"] == "seed"], pos, rad, lambda n: COL["seed"], lambda n: "#111", hover, "seed", **fk)
     _node_trace(fig, [n for n in nodes if n.get("is_endpoint")], pos, rad, lambda n: COL["endpoint"], outline, hover,
-                "endpoint (receptor / TF); outline green = activated, red = inhibited", line_w=2.2)
-    _node_trace(fig, [n for n in nodes if n["cls"] != "seed" and not n.get("is_endpoint")], pos, rad, lambda n: COL["node"], outline, hover, "intermediate", line_w=2.2)
+                "endpoint (receptor / TF); outline green = activated, red = inhibited", line_w=2.2, **fk)
+    _node_trace(fig, [n for n in nodes if n["cls"] != "seed" and not n.get("is_endpoint")], pos, rad, lambda n: COL["node"], outline, hover, "intermediate", line_w=2.2, **fk)
     # gene summary per TF (downstream)
     if F.get("genes"):
         per = defaultdict(list)
@@ -148,14 +213,14 @@ def flow_figure(json_path, width=1000, height=650, max_nodes=150):
         for tf, gs in per.items():
             if tf not in pos: continue
             up = sum(g["sign"] == 1 for g in gs); dn = sum(g["sign"] == -1 for g in gs)
-            xs.append(pos[tf][0] + 9); ys.append(pos[tf][1]); txt.append(f"{len(gs)} genes ↑{up} ↓{dn}")
+            xs.append(pos[tf][0] + 13); ys.append(pos[tf][1]); txt.append(f"{len(gs)} genes ↑{up} ↓{dn}")
             hv.append(f"<b>{tf} targets ({F.get('regulon', '')})</b><br>" + "<br>".join(f"{g['gene']} {'↑' if g['sign'] == 1 else '↓' if g['sign'] == -1 else '±'} ({g['confidence']})" for g in gs[:30]))
         fig.add_trace(go.Scatter(x=xs, y=ys, mode="text", text=txt, textposition="middle right", textfont=dict(size=9, color="#444"),
                                  hovertext=hv, hoverinfo="text", name="target genes (hover)", showlegend=True))
     for c in range(ncol):
         fig.add_annotation(x=col_x(c), y=99, text=("seed" if c == 0 else ("receptors" if F["mode"] == "upstream" else "TFs") if c == ncol - 1 else f"hop {c}"),
                            showarrow=False, font=dict(size=10, color="#888"))
-    fig.update_xaxes(range=[-2, 125 if F.get("genes") else 104]); fig.update_yaxes(range=[0, 102])
+    fig.update_xaxes(range=[-2, 130 if F.get("genes") else 104]); fig.update_yaxes(range=[0, 102])
     return fig
 
 
@@ -164,8 +229,9 @@ _ZONES = dict(membrane=(50, 50, 46, 50), cytosol=(50, 50, 22, 32), nucleus=(50, 
               mitochondrion=(80, 32, 0, 9), ER_golgi=(76, 74, 0, 9))   # cx, cy, r_inner, r_outer
 
 
-def cell_map_figure(json_path, width=900, height=700, max_nodes=150):
-    N = _load(json_path); nodes, edges, capped = _cap_nodes(N["nodes"], N["edges"], max_nodes); N["edges"] = edges
+def cell_map_figure(json_path, width=900, height=700, max_nodes=150, focus=None):
+    N = _load(json_path); fset, fvals = parse_focus(focus); fset_or_none = fset if focus is not None else None
+    nodes, edges, capped = _cap_nodes(N["nodes"], N["edges"], max_nodes, keep_ids=fset); N["edges"] = edges
     byid = {n["id"]: n for n in nodes}
     if capped: N["mode"] = f"{N.get('mode', '')} (top {max_nodes} of {len(N['nodes'])} nodes)"
     pos = {}
@@ -181,7 +247,7 @@ def cell_map_figure(json_path, width=900, height=700, max_nodes=150):
         fig.add_shape(type="circle", x0=cx - ro, y0=cy - ro * 0.85, x1=cx + ro, y1=cy + ro * 0.85, line=dict(color="#999", width=1.2))
         fig.add_annotation(x=cx, y=cy + ro * 0.85 + 2, text=comp.replace("_", "/"), showarrow=False, font=dict(size=10, color="#888"))
     fig.add_annotation(x=50, y=84, text="cytosol", showarrow=False, font=dict(size=10, color="#888"))
-    _edge_traces(fig, [e for e in N["edges"] if e["kind"] == "signaling"], pos, rad)
+    _edge_traces(fig, [e for e in N["edges"] if e["kind"] == "signaling"], pos, rad, color_fn=_focus_edge_style(fset_or_none))
     phys = [e for e in N["edges"] if e["kind"] != "signaling"]
     if phys:
         xs, ys = [], []
@@ -193,15 +259,15 @@ def cell_map_figure(json_path, width=900, height=700, max_nodes=150):
     hover = lambda n: f"<b>{n['id']}</b><br>{n['cls']} · {n['compartment']}<br>hops {n.get('hops', 0)} · score {n['score']:.2f}<br>{n.get('note', '')}"
     for cls in ["seed", "receptor", "tf", "upstream", "downstream"]:
         _node_trace(fig, [n for n in nodes if n["cls"] == cls], pos, rad, lambda n, c=cls: cmap[c],
-                    lambda n: "#999" if n.get("sign") == 0 else "#111", hover, cls, line_w=1)
+                    lambda n: "#999" if n.get("sign") == 0 else "#111", hover, cls, line_w=1, focus=fset_or_none, values=fvals)
     fig.update_xaxes(range=[0, 100], scaleanchor="y"); fig.update_yaxes(range=[0, 100])
     return fig
 
 
 # --------------------------------------------------------------------------- cross-talk (three lanes)
-def crosstalk_figure(json_path, width=1050, height=700, max_nodes=200):
-    X = _load(json_path)
-    keep = {e["from_node"] for e in X["interference"]} | {e["to_node"] for e in X["interference"]}
+def crosstalk_figure(json_path, width=1050, height=700, max_nodes=200, focus=None):
+    X = _load(json_path); fset, fvals = parse_focus(focus); fset_or_none = fset if focus is not None else None
+    keep = {e["from_node"] for e in X["interference"]} | {e["to_node"] for e in X["interference"]} | fset
     nodes, edges, capped = _cap_nodes(X["nodes"], X["edges"], max_nodes, keep_ids=keep); X["edges"] = edges
     byid = {n["id"]: n for n in nodes}
     lane_x = dict(causal=18, shared=50, goi=82)
@@ -218,7 +284,8 @@ def crosstalk_figure(json_path, width=1050, height=700, max_nodes=200):
     s = X["summary"]
     fig = _base((f"(top {max_nodes} of {len(X['nodes'])} nodes) " if capped else "") + f"Cross-talk: does {X['goi']} influence the {X['causal']} pathway?  index {s['crosstalk_index']} · "
                 f"interference edges {s['n_interference_edges']} · endpoints syn/ant/mixed {s['synergistic']}/{s['antagonistic']}/{s['mixed']}", width, height)
-    _edge_traces(fig, X["edges"], pos, rad, color_fn=lambda e: "#bbbbbb", dash_fn=lambda e: "dot" if e.get("effect", 1) == 0 else "solid", width=0.8)
+    _edge_traces(fig, X["edges"], pos, rad, color_fn=(lambda e: "#bbbbbb") if focus is None else (lambda e: "#bbbbbb" if (e["source"] in fset or e["target"] in fset) else "#eeeeee"),
+                 dash_fn=lambda e: "dot" if e.get("effect", 1) == 0 else "solid", width=0.8)
     inter = [dict(source=e["from_node"], target=e["to_node"], effect=e["edge_effect"], agreement=e["agreement"], mech=e.get("mechanism", ""), res=e.get("residue", "")) for e in X["interference"]]
     _edge_traces(fig, inter, pos, rad, color_fn=lambda e: COL["syn"] if e["agreement"] == "synergistic" else COL["ant"] if e["agreement"] == "antagonistic" else COL["mix"],
                  dash_fn=lambda e: "longdash" if "chaperone" in (e.get("mech") or "") else "solid", width=2.4)
@@ -232,9 +299,9 @@ def crosstalk_figure(json_path, width=1050, height=700, max_nodes=200):
                        + (f"<br>hops from {X['goi']}: {n['hops_x']}" if n.get("hops_x") is not None else "") + (f"<br>{n['agreement']}" if n.get("agreement") else ""))
     for lane, name in [("causal", f"{X['causal']} pathway"), ("shared", "shared"), ("goi", f"{X['goi']} pathway")]:
         _node_trace(fig, [n for n in nodes if n["lane"] == lane and n["cls"] != "seed"], pos, rad, lambda n, l=lane: COL[l],
-                    lambda n: "#111" if n.get("is_endpoint") else "rgba(0,0,0,0)", hover, name, line_w=1.5)
+                    lambda n: "#111" if n.get("is_endpoint") else "rgba(0,0,0,0)", hover, name, line_w=1.5, focus=fset_or_none, values=fvals)
         fig.add_annotation(x=lane_x[lane], y=99, text=name.upper(), showarrow=False, font=dict(size=11, color="#888"))
-    _node_trace(fig, [n for n in nodes if n["cls"] == "seed"], pos, rad, lambda n: COL["seed"], lambda n: "#111", hover, "seed genes")
+    _node_trace(fig, [n for n in nodes if n["cls"] == "seed"], pos, rad, lambda n: COL["seed"], lambda n: "#111", hover, "seed genes", focus=fset_or_none, values=fvals)
     fig.update_xaxes(range=[0, 100]); fig.update_yaxes(range=[0, 102])
     return fig
 

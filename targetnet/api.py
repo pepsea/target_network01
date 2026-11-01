@@ -48,11 +48,12 @@ def research_gene(gene, run_sl=None, **options):
     out = cli.run_dir(a, f"gene_{gene}")       # one timestamped folder for all three analyses
     cli.run_upstream(a); cli.run_downstream(a)
     if run_sl is None: run_sl = bool(a.demo or a.depmap)
+    sl_note = ""
     if run_sl:
         try: cli.run_sl(a)
-        except SystemExit as e: print(f"[sl] skipped: {e}")
+        except SystemExit as e: sl_note = str(e); print(f"[sl] skipped: {e}")
     return dict(
-        gene=gene, run_dir=out,
+        gene=gene, run_dir=out, sl_note=sl_note,
         upstream_nodes=_read(f"{out}/upstream/upstream_nodes.csv"), receptors=_read(f"{out}/upstream/receptors.csv"),
         downstream_nodes=_read(f"{out}/downstream/downstream_nodes.csv"), tfs=_read(f"{out}/downstream/transcription_factors.csv"),
         target_genes=_read(f"{out}/downstream/target_genes.csv"), sl=_read(f"{out}/sl/synthetic_lethality.csv"),
@@ -81,8 +82,12 @@ def research_crosstalk(core, target, **options):
                                                 target_flow=f"{root}/downstream_{X}_without_{C}/flow.html"))
 
 
-def figure(view_path, **kw):
-    """Plotly figure for a view: pass the .html or .json path from result['views'] (e.g. figure(r['views']['downstream_flow']))."""
+def figure(view_path, focus=None, **kw):
+    """Plotly figure for a view: pass the .html or .json path from result['views'] (e.g. figure(r['views']['downstream_flow'])).
+    focus: genes to highlight — list of symbols, a text/CSV file (symbol[, value] per line), or dict/Series gene -> value
+    (e.g. log2FC from a proteomics experiment). Other nodes are drawn as small grey dots; focus genes keep colour, size and label,
+    and are coloured by value when values are given."""
+    if focus is not None: kw["focus"] = focus
     from . import plots
     jp = os.path.splitext(view_path)[0] + ".json"
     if not os.path.exists(jp):
@@ -90,6 +95,7 @@ def figure(view_path, **kw):
     kind = os.path.basename(jp)
     fn = plots.flow_figure if kind.startswith("flow") else plots.cell_map_figure if kind.startswith("cell_map") else \
          plots.crosstalk_figure if kind.startswith("crosstalk") else plots.volcano_figure
+    if fn is plots.volcano_figure: kw.pop("focus", None)
     return fn(jp, **kw)
 
 
@@ -113,6 +119,8 @@ def summarize_gene(r, n=10):
     if len(r["sl"]):
         hits = r["sl"][r["sl"].significant]
         lines.append(f"Synthetic lethality: {len(hits)} hits. Top: " + ", ".join(hits.sort_values('delta').head(n).gene))
+    elif r.get("sl_note"):
+        lines.append("Synthetic lethality: not run — " + r["sl_note"].replace("[DepMap] ", ""))
     return "\n".join(lines)
 
 

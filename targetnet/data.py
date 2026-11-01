@@ -447,16 +447,21 @@ def load_compartments(genes, demo=False):
 
 # ------------------------------------------------------------------ DepMap
 _DEPMAP = {}
+SL_NOTE = {"text": ""}     # why the synthetic-lethality test was (not) run; shown by api/notebook
+
+def _sl_note(msg):
+    SL_NOTE["text"] = msg; print(msg)
 
 def load_depmap(depmap_dir, gene, candidates, min_lost=None, padj_th=None, delta_th=None):
     """Returns coess {gene: r}, sl_full DataFrame(gene, delta, p, padj, n_lost, significant)."""
     empty = ({}, pd.DataFrame())
     depmap_dir = depmap_dir or _cfgmod.db(CFG, "depmap", "dir")
     slc = CFG.get("sl", {}); min_lost = min_lost or slc.get("min_lost", 20); padj_th = padj_th or slc.get("padj", 0.05); delta_th = delta_th or slc.get("delta", 0.15)
-    if not depmap_dir: return empty
+    if not depmap_dir:
+        _sl_note("[DepMap] no DepMap directory configured (databases.depmap.dir) -> no co-essentiality, no SL test"); return empty
     ge_path = os.path.join(depmap_dir, "CRISPRGeneEffect.csv")
     if not os.path.exists(ge_path):
-        print("[DepMap] CRISPRGeneEffect.csv not found"); return empty
+        _sl_note(f"[DepMap] CRISPRGeneEffect.csv not found in {depmap_dir} -> no co-essentiality, no SL test"); return empty
     if _DEPMAP.get("path") == ge_path:
         ge = _DEPMAP["ge"]
     else:
@@ -464,7 +469,7 @@ def load_depmap(depmap_dir, gene, candidates, min_lost=None, padj_th=None, delta
         ge = pd.read_csv(ge_path, index_col=0); ge.columns = [c.split(" (")[0].upper() for c in ge.columns]
         _DEPMAP.update(path=ge_path, ge=ge)
     if gene not in ge.columns:
-        print(f"[DepMap] {gene} not in matrix"); return empty
+        _sl_note(f"[DepMap] {gene} is not in the CRISPR gene-effect matrix -> no SL test"); return empty
     a = ge[gene]
     cols = [g for g in candidates if g in ge.columns]
     corr = ge[cols].corrwith(a) if cols else pd.Series(dtype=float)
@@ -484,7 +489,13 @@ def load_depmap(depmap_dir, gene, candidates, min_lost=None, padj_th=None, delta
             lost = set(ex.loc[common][ex.loc[common, gene] <= q].index)
             print(f"[DepMap] fallback: lowest-quartile {gene} expression = 'lost' ({len(lost)} lines)")
     if len(lost) < min_lost:
-        print("[DepMap] too few lost lines -> no SL test"); return coess, pd.DataFrame()
+        ex_missing = not os.path.exists(os.path.join(depmap_dir, "OmicsExpressionProteinCodingGenesTPMLogp1.csv"))
+        _sl_note(f"[DepMap] SL test skipped: only {len(lost)} cell lines with likely loss of {gene} (minimum {min_lost}). "
+                 + ("Expected for an essential gene / oncogene; SL is informative for genes that tumours actually lose (PTEN, TSC2, STK11, BRCA1...). "
+                    if not ex_missing else
+                    "No OmicsExpressionProteinCodingGenesTPMLogp1.csv for the low-expression fallback; for an oncogene like this the test is not meaningful anyway. ")
+                 + "Co-essentiality was still computed.")
+        return coess, pd.DataFrame()
     from scipy import stats
     li = ge.index.isin(lost)
     X, Y = ge.loc[li], ge.loc[~li]                       # vectorised Welch t-test over all genes at once

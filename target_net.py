@@ -174,7 +174,7 @@ def run_sl(args):
     else:
         if not args.depmap: sys.exit("sl mode needs --depmap <dir> (see fetch_depmap.py)")
         coess, full = D.load_depmap(args.depmap, gene, set())
-    if not len(full): sys.exit("no SL table produced")
+    if not len(full): sys.exit(D.SL_NOTE["text"] or "no SL table produced")
     # which hits are already on the pathway? (run a quick downstream+upstream walk to mark them)
     on_path = set()
     try:
