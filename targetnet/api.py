@@ -21,7 +21,7 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 import target_net as cli  # noqa: E402
 
-DEFAULTS = dict(config=None, demo=False, max_depth=None, min_score=None, hub_penalty=None, tissue=None, expressed_file=None,
+DEFAULTS = dict(out="runs", config=None, demo=False, max_depth=None, min_score=None, hub_penalty=None, tissue=None, expressed_file=None,
                 no_reactome=False, reactome_fi=None, depmap=None, regulon=None, conf=None, regulon_file=None, max_targets=None)
 
 
@@ -36,23 +36,23 @@ def _read(path):
     return pd.read_csv(path) if os.path.exists(path) else pd.DataFrame()
 
 
-def research_gene(gene, run_sl=None, workdir=None, **options):
+def research_gene(gene, run_sl=None, **options):
     """
     Single-gene research: upstream (to receptors), downstream (to TFs and target genes), and synthetic lethality
-    when a DepMap directory is given (or demo=True). Options = CLI options as keywords (demo, depmap, tissue, max_depth, ...).
-    Returns dict of DataFrames + paths of HTML views.
+    when a DepMap directory is given (or demo=True). Options = CLI options as keywords (demo, depmap, tissue, max_depth, out, ...).
+    Outputs go to <out>/<YYYYMMDD_HHMMSS>_gene_<GENE>/{upstream,downstream,sl}/ (out defaults to "runs").
+    Returns dict of DataFrames + run_dir + paths of HTML views.
     """
-    if workdir: os.makedirs(workdir, exist_ok=True); os.chdir(workdir)
     a = _args(**options); cli.apply_config(a); gene = cli.resolve_symbol(gene)
     a.gene = gene
+    out = cli.run_dir(a, f"gene_{gene}")       # one timestamped folder for all three analyses
     cli.run_upstream(a); cli.run_downstream(a)
     if run_sl is None: run_sl = bool(a.demo or a.depmap)
     if run_sl:
         try: cli.run_sl(a)
         except SystemExit as e: print(f"[sl] skipped: {e}")
-    out = f"out_{gene}"
     return dict(
-        gene=gene,
+        gene=gene, run_dir=out,
         upstream_nodes=_read(f"{out}/upstream/upstream_nodes.csv"), receptors=_read(f"{out}/upstream/receptors.csv"),
         downstream_nodes=_read(f"{out}/downstream/downstream_nodes.csv"), tfs=_read(f"{out}/downstream/transcription_factors.csv"),
         target_genes=_read(f"{out}/downstream/target_genes.csv"), sl=_read(f"{out}/sl/synthetic_lethality.csv"),
@@ -61,23 +61,24 @@ def research_gene(gene, run_sl=None, workdir=None, **options):
                    sl=f"{out}/sl/synthetic_lethality.html"))
 
 
-def research_crosstalk(core, target, workdir=None, **options):
+def research_crosstalk(core, target, **options):
     """
     Cross-talk research: does `target` (gene of interest) influence the pathway of `core` (e.g. disease-causal gene)?
-    Each pathway is walked with the other gene removed. Returns summary, shared nodes, interference edges, endpoint agreement.
+    Each pathway is walked with the other gene removed. Outputs go to <out>/<YYYYMMDD_HHMMSS>_crosstalk_<CORE>_x_<TARGET>/.
+    Returns summary, shared nodes, interference edges, endpoint agreement, run_dir, view paths.
     """
-    if workdir: os.makedirs(workdir, exist_ok=True); os.chdir(workdir)
     a = _args(**options); cli.apply_config(a); a.causal, a.goi = core, target
-    cli.run_crosstalk(a)
     C, X = cli.resolve_symbol(core), cli.resolve_symbol(target)
-    out = f"out_{C}/crosstalk_{X}"
+    root = cli.run_dir(a, f"crosstalk_{C}_x_{X}")
+    cli.run_crosstalk(a)
+    out = f"{root}/crosstalk"
     summary = json.load(open(f"{out}/summary.json"))
     tf, ge = _read(f"{out}/tf_agreement.csv"), _read(f"{out}/gene_agreement.csv")
     endpoints = pd.concat([tf.assign(layer="tf").rename(columns={"node": "name"}), ge.assign(layer="gene").rename(columns={"gene": "name"})], ignore_index=True) \
         if len(tf) or len(ge) else pd.DataFrame()
-    return dict(core=C, target=X, summary=summary, shared=_read(f"{out}/shared.csv"), interference=_read(f"{out}/interference.csv"),
-                endpoints=endpoints, views=dict(crosstalk=f"{out}/crosstalk.html", core_flow=f"out_{C}/downstream_without_{X}/flow.html",
-                                                target_flow=f"out_{X}/downstream_without_{C}/flow.html"))
+    return dict(core=C, target=X, run_dir=root, summary=summary, shared=_read(f"{out}/shared.csv"), interference=_read(f"{out}/interference.csv"),
+                endpoints=endpoints, views=dict(crosstalk=f"{out}/crosstalk.html", core_flow=f"{root}/downstream_{C}_without_{X}/flow.html",
+                                                target_flow=f"{root}/downstream_{X}_without_{C}/flow.html"))
 
 
 def figure(view_path, **kw):

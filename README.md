@@ -26,7 +26,7 @@ database; anything left `null` is downloaded into `cache_dir` when `allow_downlo
 notebooks/gene_research.ipynb       input: one candidate gene  -> upstream / downstream / synthetic lethality
 notebooks/crosstalk_research.ipynb  input: CORE (disease-causal) + TARGET gene -> cross-talk
 ```
-Both use `targetnet.api` (`research_gene`, `research_crosstalk`, `show`) and write results to `runs/out_<GENE>/`.
+Both use `targetnet.api` (`research_gene`, `research_crosstalk`, `show`) and write results to `runs/<YYYYMMDD_HHMMSS>_gene_<GENE>/` or `runs/<YYYYMMDD_HHMMSS>_crosstalk_<CORE>_x_<TARGET>/` (`run_info.json` records the parameters; `out=` changes the root).
 
 ## Setup
 ```bash
@@ -55,7 +55,7 @@ both 0.95; each node multiplies by a hub penalty. Sign = product of edge effects
 whose best positive and best negative paths are within 20 % of each other is *mixed*. The walk never expands past an
 endpoint, past `--max-depth`, or below `--min-score`.
 
-| mode | walk | endpoints | extra | outputs (`out_<GENE>/<mode>/`) |
+| mode | walk | endpoints | extra | outputs (inside `runs/<YYYYMMDD_HHMMSS>_<mode>_<genes>/`) |
 |---|---|---|---|---|
 | upstream | backwards | receptors (UniProt KW-0675 ∩ cell membrane) | — | `upstream_nodes.csv`, `receptors.csv`, `flow.html`, `cell_map.html` |
 | downstream | forwards | TFs (Lambert 2018) | TF → genes via DoRothEA; gene sign = TF sign × mode of regulation | `downstream_nodes.csv`, `transcription_factors.csv`, `target_genes.csv`, `flow.html`, `cell_map.html` |

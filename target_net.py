@@ -49,6 +49,21 @@ def build_signaling(args):
     return G, und
 
 
+def run_dir(args, tag):
+    """One folder per analysis: <out_root>/<YYYYMMDD_HHMMSS>_<tag>/ ; reused within a run (api sets args.run_dir once)."""
+    import datetime
+    if getattr(args, "run_dir", None):
+        return args.run_dir
+    root = getattr(args, "out", None) or "runs"
+    d = os.path.join(root, datetime.datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + tag)
+    os.makedirs(d, exist_ok=True); args.run_dir = d
+    with open(os.path.join(d, "run_info.json"), "w") as f:
+        json.dump({k: v for k, v in vars(args).items() if not k.startswith("_") and k != "run_dir"} | {"run_dir": d, "started": datetime.datetime.now().isoformat(timespec="seconds")},
+                  f, indent=1, default=str)
+    print(f"[run] {d}")
+    return d
+
+
 def write_html(tpl, token, payload, path):
     """Write the standalone D3 view and, next to it, the same payload as JSON (used by targetnet.plots for Plotly figures)."""
     html = open(os.path.join(TPL, tpl)).read().replace(token, json.dumps(payload))
@@ -100,7 +115,7 @@ def cell_map_payload(gene, df, G, comp, mode, und):
 
 # ----------------------------------------------------------------------------- mode: upstream
 def run_upstream(args):
-    gene = resolve_symbol(args.gene); out = os.path.join(f"out_{gene}", "upstream"); os.makedirs(out, exist_ok=True)
+    gene = resolve_symbol(args.gene); out = os.path.join(run_dir(args, f"upstream_{gene}"), "upstream"); os.makedirs(out, exist_ok=True)
     G, und = build_signaling(args)
     receptors = D.load_receptors(args.demo)
     df = Wk.signed_walk(G, gene, receptors, direction="up", max_depth=args.max_depth, min_score=args.min_score, hub_strength=args.hub_penalty)
@@ -117,13 +132,14 @@ def run_upstream(args):
     write_html("flow.html", "/*__FLOW_JSON__*/", flow, os.path.join(out, "flow.html"))
     write_html("cell_map.html", "/*__NETWORK_JSON__*/", cell_map_payload(gene, df, G, comp, "upstream", und), os.path.join(out, "cell_map.html"))
     print(f"\n[upstream] {len(df)} nodes, {len(rec)} receptors -> {out}/")
+    return df
     print(rec.head(12)[["node", "hops", "score", "sign", "coessentiality_r", "best_path"]].to_string(index=False))
 
 
 # ----------------------------------------------------------------------------- mode: downstream
 def run_downstream(args, gene=None, quiet=False, exclude=(), G=None, und=None):
     gene = resolve_symbol(gene or args.gene)
-    out = os.path.join(f"out_{gene}", "downstream" + ("_without_" + "_".join(exclude) if exclude else "")); os.makedirs(out, exist_ok=True)
+    out = os.path.join(run_dir(args, f"downstream_{gene}"), ("downstream" if not exclude else f"downstream_{gene}_without_" + "_".join(exclude))); os.makedirs(out, exist_ok=True)
     if G is None: G, und = build_signaling(args)
     if exclude:   # cross-talk: influence of this gene that does NOT pass through the other gene
         G = G.copy(); G.remove_nodes_from([e for e in exclude if e in G])
@@ -152,7 +168,7 @@ def run_downstream(args, gene=None, quiet=False, exclude=(), G=None, und=None):
 
 # ----------------------------------------------------------------------------- mode: synthetic lethality
 def run_sl(args):
-    gene = resolve_symbol(args.gene); out = os.path.join(f"out_{gene}", "sl"); os.makedirs(out, exist_ok=True)
+    gene = resolve_symbol(args.gene); out = os.path.join(run_dir(args, f"sl_{gene}"), "sl"); os.makedirs(out, exist_ok=True)
     if args.demo:
         coess, full = D.demo_depmap(gene, set())
     else:
@@ -180,7 +196,7 @@ def run_sl(args):
 # ----------------------------------------------------------------------------- mode: crosstalk
 def run_crosstalk(args):
     C, X = resolve_symbol(args.causal), resolve_symbol(args.goi)
-    out = os.path.join(f"out_{C}", f"crosstalk_{X}"); os.makedirs(out, exist_ok=True)
+    out = os.path.join(run_dir(args, f"crosstalk_{C}_x_{X}"), "crosstalk"); os.makedirs(out, exist_ok=True)
     G, und = build_signaling(args)
     _, dC, gC = run_downstream(args, gene=C, quiet=True, exclude=(X,), G=G, und=und)   # C's pathway, X removed
     _, dX, gX = run_downstream(args, gene=X, quiet=True, exclude=(C,), G=G, und=und)   # X's pathway, C removed
@@ -242,6 +258,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="mode", required=True)
     def common(p):
+        p.add_argument("--out", default="runs", help="root folder for run outputs (default: runs/<YYYYMMDD_HHMMSS>_<mode>_<genes>/)")
         p.add_argument("--config", default=None, help="YAML with database paths (default: ./target_net.yaml, ~/.target_net.yaml, $TARGETNET_CONFIG)")
         p.add_argument("--demo", action="store_true", help="offline curated AKT1/MAPK1 axis (no network)")
         p.add_argument("--max-depth", type=int, default=None); p.add_argument("--min-score", type=float, default=None)

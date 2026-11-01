@@ -82,14 +82,15 @@ synthetic-lethal hits with `on_pathway = False`. Cross-talk: index with baseline
 mechanism, synergistic/antagonistic), antagonistic edges called out (combination-therapy relevance). Always state the databases
 and config used, whether DepMap / tissue filter were on, that database edges are context-free hypotheses, and that
 interference edges with a residue are testable by phosphoproteomics (core inhibitor ± target inhibitor).
-Point to the views under `runs/out_<GENE>/…` (`flow.html`, `cell_map.html`, `crosstalk.html`, `synthetic_lethality.html`).
+Point to the run folder (`r["run_dir"]` / `x["run_dir"]`, printed as `[run] …`) and its views (`flow.html`, `cell_map.html`, `crosstalk.html`, `synthetic_lethality.html`).
 
 ## Output layout
 ```
-runs/out_<GENE>/upstream/     upstream_nodes.csv receptors.csv flow.html cell_map.html
-runs/out_<GENE>/downstream/   downstream_nodes.csv transcription_factors.csv target_genes.csv flow.html cell_map.html
-runs/out_<GENE>/sl/           synthetic_lethality.csv synthetic_lethality.html
-runs/out_<CORE>/crosstalk_<TARGET>/  summary.json shared.csv interference.csv tf_agreement.csv gene_agreement.csv crosstalk.html
+runs/<YYYYMMDD_HHMMSS>_gene_<GENE>/            run_info.json + upstream/ downstream/ sl/   (notebook / api.research_gene)
+runs/<YYYYMMDD_HHMMSS>_<mode>_<GENE>/          CLI single mode
+runs/<YYYYMMDD_HHMMSS>_crosstalk_<CORE>_x_<TARGET>/  crosstalk/ (summary.json shared.csv interference.csv tf_agreement.csv gene_agreement.csv crosstalk.html)
+                                               + downstream_<CORE>_without_<TARGET>/ + downstream_<TARGET>_without_<CORE>/
+each view (.html) has a .json twin for targetnet.plots; `--out DIR` / `out=` changes the root
 ```
 
 ## Licences (say so when results go to a client)
