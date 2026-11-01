@@ -279,7 +279,10 @@ def flow_figure(json_path, width=1000, height=650, max_nodes=150, focus=None, ca
     ncol = max_mid + (3 if has_lig else 2)
     col_x = lambda c: (c + 0.5) / ncol * 100
     if F["mode"] == "upstream": col_x = lambda c, f=col_x: 100 - f(c)
-    pos = {}
+    # a hop with many genes is wrapped into side-by-side sub-columns (at most ROWS genes each) instead of one very tall column
+    ROWS, SUBMAX = 28, 3
+    slot = 100 / ncol
+    pos = {}; nsub = {}
     for c in range(ncol):
         arr = [n for n in nodes if n["col"] == c]
         if c > 0:   # barycenter ordering on already placed neighbours
@@ -287,10 +290,18 @@ def flow_figure(json_path, width=1000, height=650, max_nodes=150, focus=None, ca
                 prev = [pos[e["source"]][1] for e in F["edges"] if e["target"] == n["id"] and e["source"] in pos]
                 n["_bc"] = sum(prev) / len(prev) if prev else 50
             arr.sort(key=lambda n: (n.get("_bc", 50), -n["score"]))
-        step = 90 / max(len(arr), 1)
-        for i, n in enumerate(arr): pos[n["id"]] = (col_x(c), 95 - step * (i + 0.5))
+        k = max(1, min(SUBMAX, math.ceil(len(arr) / ROWS))); nsub[c] = k
+        per = math.ceil(len(arr) / k)
+        for j in range(k):
+            part = arr[j * per:(j + 1) * per]
+            x = col_x(c) + (0 if k == 1 else (j - (k - 1) / 2) * slot * 0.75 / (k - 1 if k > 1 else 1) * (1 if F["mode"] != "upstream" else -1))
+            step = 90 / max(len(part), 1)
+            for i, n in enumerate(part): pos[n["id"]] = (x, 95 - step * (i + 0.5))
+    tallest = max(min(ROWS, math.ceil(len([n for n in nodes if n["col"] == c]) / nsub[c])) for c in range(ncol))
+    wrapped = any(k > 1 for k in nsub.values())
+    label_size = 9 if wrapped else 10
     rad = lambda nid: 2.2 if byid[nid]["cls"] == "seed" else 1.0 + 1.6 * byid[nid]["score"]
-    fig = _base(f"{F['mode']} pathway of {F['seed']}  —  {F.get('subtitle', '')}", width, max(height, 14 * max(len(a) for a in [[n for n in nodes if n['col'] == c] for c in range(ncol)])))
+    fig = _base(f"{F['mode']} pathway of {F['seed']}  —  {F.get('subtitle', '')}", width if not wrapped else int(width * 1.15), max(height, 16 * tallest + 120))
     _edge_traces(fig, F["edges"], pos, rad, color_fn=_focus_edge_style(fset_or_none))
     if focus is not None: fig.update_layout(title_text=fig.layout.title.text + f"  |  focus: {len(fset & set(byid))}/{len(fset)} focus genes in view")
     hover = lambda n: (f"<b>{n['id']}</b><br>hops {n['hops']} · path score {n['score']:.2f}<br>net sign: "
@@ -329,10 +340,10 @@ def flow_figure(json_path, width=1000, height=650, max_nodes=150, focus=None, ca
         fig.update_layout(title_text=f"impact of {X} on the {F['seed']} pathway  —  " + F.get("subtitle", ""))
     else:
         _node_trace(fig, [n for n in nodes if n.get("is_endpoint") and not is_lig(n)], pos, rad, lambda n: COL["endpoint"], outline, hover,
-                    "endpoint (receptor / TF); outline green = activated, red = inhibited", line_w=2.2, **fk)
+                    "endpoint (receptor / TF); outline green = activated, red = inhibited", line_w=2.2, label_size=label_size, **fk)
         _node_trace(fig, [n for n in nodes if is_lig(n)], pos, rad, lambda n: COL["ligand"], outline, hover,
-                    "ligand (secreted cytokine / growth factor / hormone)", line_w=2.2, **fk)
-        _node_trace(fig, [n for n in nodes if n["cls"] != "seed" and not n.get("is_endpoint")], pos, rad, lambda n: COL["node"], outline, hover, "intermediate", line_w=2.2, **fk)
+                    "ligand (secreted cytokine / growth factor / hormone)", line_w=2.2, label_size=label_size, **fk)
+        _node_trace(fig, [n for n in nodes if n["cls"] != "seed" and not n.get("is_endpoint")], pos, rad, lambda n: COL["node"], outline, hover, "intermediate", line_w=2.2, label_size=label_size, **fk)
     # gene summary per TF (downstream)
     if F.get("genes"):
         per = defaultdict(list)
@@ -456,17 +467,26 @@ def crosstalk_figure(json_path, width=1100, height=820, max_nodes=120, max_edges
     groups = defaultdict(list)
     for n in nodes: groups[(n["lane"], n.get("hops_x", 0) if n["lane"] == "goi" else n.get("hops_c", 0))].append(n)
     pos = {}
-    band = 86 / max(max_hop, 1)                      # vertical space per hop
+    NCOLS = 5                                                  # names per grid row inside a lane (label collisions start above this)
+    rows_at = defaultdict(int)                                 # rows needed at each hop = the tallest lane at that hop
+    for (lane, hp), arr in groups.items():
+        ncols = 1 if len(arr) == 1 else min(NCOLS, len(arr))
+        rows_at[hp or 0] = max(rows_at[hp or 0], math.ceil(len(arr) / ncols))
+    total_rows = sum(rows_at[h] for h in range(max_hop + 1)) + max_hop      # one blank row between hops
+    row_h = min(4.2, 88 / max(total_rows, 1))
+    y_top = {}; y = 94
+    for h in range(max_hop + 1):
+        y_top[h] = y; y -= (rows_at[h] + 1) * row_h
     for (lane, hp), arr in groups.items():
         arr.sort(key=lambda n: -n["score"])
         span = 26 if lane != "shared" else 24
-        ncols = 1 if len(arr) == 1 else min(4, len(arr))         # grid: at most 4 names per row, so labels do not collide
-        row_h = min(4.5, (band - 4) / max(1, math.ceil(len(arr) / ncols)))
+        ncols = 1 if len(arr) == 1 else min(NCOLS, len(arr))
         for i, n in enumerate(arr):
             r, c = divmod(i, ncols)
             x = lane_x[lane] if ncols == 1 else lane_x[lane] - span / 2 + span * (c + 0.5) / ncols
-            y = 94 - band * (hp or 0) - r * row_h
-            pos[n["id"]] = (x, y)
+            pos[n["id"]] = (x, y_top[hp or 0] - r * row_h)
+    y_bottom = min([v[1] for v in pos.values()] or [0]) - 4   # crop the empty space under the last row
+    height = max(560, int((102 - y_bottom) * 7.5) + 260)       # ~28 px per grid row + title / caption; grows with the rows
     rad = lambda nid: 2.0 if byid[nid]["cls"] == "seed" else 0.9 + 1.2 * byid[nid]["score"]
     s = X["summary"]
     enr = f"TF-overlap enrichment {s.get('tf_enrichment')} (p={s.get('tf_overlap_p', float('nan')):.1g})" if s.get("tf_enrichment") is not None else f"index {s['crosstalk_index']}"
@@ -500,7 +520,7 @@ def crosstalk_figure(json_path, width=1100, height=820, max_nodes=120, max_edges
                     lambda n: "#111" if n.get("is_endpoint") else "rgba(0,0,0,0)", hover, name, line_w=1.5, focus=fset_or_none, values=fvals, label_size=9)
         fig.add_annotation(x=lane_x[lane], y=99, text=name.upper(), showarrow=False, font=dict(size=11, color="#888"))
     _node_trace(fig, [n for n in nodes if n["cls"] == "seed"], pos, rad, lambda n: COL["seed"], lambda n: "#111", hover, "seed genes", focus=fset_or_none, values=fvals)
-    fig.update_xaxes(range=[0, 100]); fig.update_yaxes(range=[0, 102])
+    fig.update_xaxes(range=[0, 100]); fig.update_yaxes(range=[y_bottom, 102])
     _edge_legend(fig, ("act", "inh", "syn", "ant", "chap"))
     if caption: add_caption(fig, "crosstalk")
     return fig
