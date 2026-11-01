@@ -36,7 +36,7 @@ DEFAULTS = {
         "depmap":      {"dir": None},                        # folder with CRISPRGeneEffect.csv etc.
         "hpa_tissue":  {"path": None, "url": "https://www.proteinatlas.org/download/rna_tissue_consensus.tsv.zip"},
     },
-    "walk": {"max_depth": 5, "min_score": 0.2, "hub_penalty": 0.25},
+    "walk": {"max_depth": 5, "min_score": 0.25, "hub_penalty": 0.25},
     "sl":   {"min_lost": 20, "padj": 0.05, "delta": 0.15},
 }
 

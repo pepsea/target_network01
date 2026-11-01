@@ -37,7 +37,7 @@ databases:
 
 walk:
   max_depth: 5
-  min_score: 0.2
+  min_score: 0.25           # live AKT1: 0.2 -> 903 nodes/79 receptors, 0.3 -> 222/13; 0.25 is the compromise
   hub_penalty: 0.25
 
 sl:
