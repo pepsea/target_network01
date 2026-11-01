@@ -17,7 +17,7 @@ from collections import defaultdict
 import plotly.graph_objects as go
 
 # flat, muted palette on white (owner's convention)
-COL = dict(seed="#1f3a5f", endpoint="#2d5f8f", ligand="#3f8f8f", node="#8a8a8a", shared="#6b5b95", causal="#4a7fb5", goi="#b36b3c",
+COL = dict(seed="#1a1a1a", endpoint="#2d5f8f", ligand="#3f8f8f", node="#8a8a8a", shared="#6b5b95", causal="#4a7fb5", goi="#b36b3c",
            syn="#2e7d32", ant="#b23b3b", mix="#888888", edge="#777777", amb="#bbbbbb", phys="#c8c8c8")
 FONT = dict(family="Helvetica, Arial, sans-serif", size=11, color="#222")
 
@@ -45,20 +45,20 @@ CAPTIONS = {
   "LINES  dark grey curve = signaling edge from the signed graph (SIGNOR direct relations, plus custom_edges if configured; Reactome FI only if mode=directed or as seed rescue — hover an edge for its source); it runs from regulator to target.",
   "       ▶ arrowhead = activation / up-regulation · ┃ bar head = inhibition / down-regulation · dotted grey = relation of unknown sign.",
   "       Line thickness ∝ edge confidence (SIGNOR score). Only edges among drawn nodes are shown; the walk itself used the whole graph.",
-  "NODES  dark blue = seed gene · blue = endpoint (receptor in upstream view, transcription factor in downstream view) · grey = intermediate.",
+  "NODES  black diamond = the analysed gene (seed) · blue = endpoint (receptor in upstream view, transcription factor in downstream view) · grey = intermediate.",
   "       Fill saturation ∝ path score. Outline: green = seed activates this node (consensus over all paths), red = inhibits, grey dashed = mixed; long dashes = feedback node (also upstream of the seed).",
   "COLUMNS hop N = shortest number of edges from the seed; endpoints are collected in the last column(s): upstream = receptors, then their secreted ligands (teal; UniProt Secreted + Cytokine/Growth factor/Hormone); downstream = TFs. Right-hand boxes: DoRothEA target genes per TF (↑ induced, ↓ repressed by the seed); hover to list them.",
   "FOCUS  with a focus list: focus genes are orange with bold dark-orange labels (blue→red fill instead when a value such as log2FC is supplied); all other nodes small grey; edges not touching a focus gene are lighter."],
  "cell_map": [
   "LINES  dark grey curve with ▶ (activation) or ┃ (inhibition) = signaling edge; dotted light grey straight line = physical contact only (STRING / Reactome undirected), no direction or sign.",
   "NODES  placed by UniProt subcellular location (secreted ligands outside the membrane ring, membrane ring, cytosol ring, nucleus, lysosome, mitochondrion, ER/Golgi); position inside a zone is arbitrary.",
-  "       dark blue = seed · blue = receptor · purple = TF · light blue = upstream node · grey = downstream node; size ∝ path score; grey outline = mixed sign."],
+  "       black diamond = analysed gene · blue = receptor · purple = TF · light blue = upstream node · grey = downstream node; size ∝ path score; grey outline = mixed sign."],
  "crosstalk": [
   "LANES  left = nodes reached only from the core (causal) gene · centre = reached from both · right = reached only from the gene of interest (GOI). Row ≈ hops from the respective seed.",
   "THIN GREY LINES = ordinary signaling edges of the two pathways (▶ activation, ┃ inhibition, dotted = unknown sign).",
   "COLOURED LINES = interference edges: a GOI-side node acting on a core-pathway node. green = pushes that node the same way as the core gene (synergistic) · red = opposite way (antagonistic) · grey = undetermined.",
   "       long-dashed = chaperone / protein-stability edge rather than phosphorylation. Only the top-ranked edges (by proximity to both genes) are drawn; all are in interference.csv. Hover the midpoint for residue and mechanism.",
-  "NODES  dark blue = the two seed genes · purple = shared · light blue = core pathway · orange = GOI pathway; black outline = TF endpoint; size ∝ path score.",
+  "NODES  black diamonds = the two analysed genes (core, target) · purple = shared · light blue = core pathway · orange = GOI pathway; black outline = TF endpoint; size ∝ path score.",
   "TITLE  TF-overlap enrichment = observed / expected overlap of the two TF sets given how many TFs the GOI reaches at all (hypergeometric p)."],
  "volcano": [
   "x = Δ CRISPR gene effect (seed-lost − seed-intact cell lines; more negative = more essential when the seed is lost) · y = −log10 FDR.",
@@ -199,13 +199,20 @@ FOCUS_COL = "#E8862E"   # focus-gene fill (muted orange, distinct from the blue/
 FOCUS_TXT = "#9A4B00"   # focus-gene label and outline
 
 
+_is_seed = lambda n: n.get("cls") == "seed"
+_sym = lambda nodes: ["diamond" if _is_seed(n) else "circle" for n in nodes]          # analysed gene(s): black diamond, bold label
+_lbl = lambda n, extra="": (f"<b>{n['id']}</b>" if _is_seed(n) else n["id"]) + extra
+
+
 def _node_trace(fig, nodes, pos, rad, fill, line_col, hover, name, line_w=1.5, dash=None, show=True, focus=None, values=None, label_size=10):
-    """focus = set of highlighted genes (None = no focus mode). In focus mode non-focus nodes are small grey dots without labels."""
+    """focus = set of highlighted genes (None = no focus mode). In focus mode non-focus nodes are small grey dots without labels.
+    The analysed gene(s) (cls == 'seed') are always drawn as a black diamond with a bold label, in every view."""
     if not nodes: return
     if focus is None:
         fig.add_trace(go.Scatter(x=[pos[n["id"]][0] for n in nodes], y=[pos[n["id"]][1] for n in nodes], mode="markers+text",
-                                 text=[n["id"] for n in nodes], textposition="middle right", textfont=dict(size=label_size),
-                                 marker=dict(size=[rad(n["id"]) * 7 for n in nodes], color=[fill(n) for n in nodes],
+                                 text=[_lbl(n) for n in nodes], textposition="middle right",
+                                 textfont=dict(size=[label_size + 2 if _is_seed(n) else label_size for n in nodes]),
+                                 marker=dict(size=[rad(n["id"]) * 7 for n in nodes], color=[fill(n) for n in nodes], symbol=_sym(nodes),
                                              line=dict(color=[line_col(n) for n in nodes], width=line_w)),
                                  hovertext=[hover(n) for n in nodes], hoverinfo="text", name=name, showlegend=show))
         return
@@ -226,7 +233,8 @@ def _node_trace(fig, nodes, pos, rad, fill, line_col, hover, name, line_w=1.5, d
         fig.add_trace(go.Scatter(x=[pos[n["id"]][0] for n in hi], y=[pos[n["id"]][1] for n in hi], mode="markers+text",
                                  text=[f"<b>{n['id']}</b>" + (f" {values[n['id']]:+.2f}" if n["id"] in values else "") for n in hi],
                                  textposition="middle right", textfont=dict(size=11, color=[FOCUS_TXT if n["id"] in focus else "#111" for n in hi]),
-                                 marker=dict(size=[rad(n["id"]) * 6.5 for n in hi], color=col, line=dict(color=FOCUS_TXT, width=1.8)),
+                                 marker=dict(size=[rad(n["id"]) * 6.5 for n in hi], color=col, symbol=_sym(hi),
+                                             line=dict(color=[FOCUS_TXT if n["id"] in focus else "#111" for n in hi], width=1.8)),
                                  hovertext=[hover(n) + (f"<br>focus value {values[n['id']]:+.3f}" if n["id"] in values else "<br>focus gene") for n in hi],
                                  hoverinfo="text", name=f"{name} — focus" + (" (colour = value)" if values else ""), showlegend=show))
 
