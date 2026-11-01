@@ -1,52 +1,79 @@
-# target_net configuration -- copy to ./target_net.yaml (or ~/.target_net.yaml) and edit the paths.
-# Any path left null is downloaded on demand into cache_dir (if allow_download is true).
+# target_net configuration
+# Copy to ./target_net.yaml (project root; also found from notebooks/) or ~/.target_net.yaml and edit the paths.
+# Every key below is read by the code; keys you leave out take these defaults. Check what will actually be used with:
+#     python target_net.py check-config
+#
+# Expected folder layout (one root, here ~/Documents/database):
+#   signor/all_data_12_07_26.tsv                         SIGNOR "download all data" (or signor_human.tsv API dump)
+#   reactome/FIsInGene_061424_with_annotations.txt        Reactome Functional Interactions (.txt or .zip)
+#   uniprot/uniprot_human_reviewed.tsv                    UniProt bulk tsv (accession, gene_primary, keyword, cc_subcellular_location)
+#   tf/DatabaseExtract_v_1.01.csv                         Lambert 2018 human TF list
+#   dorothea/dorothea_ABC_commercial.tsv                  DoRothEA regulons (OmniPath export)  <- python target_net.py regulon-url --save <path>
+#   depmap/CRISPRGeneEffect.csv                           DepMap CRISPR gene effect (Chronos)          required for genetics
+#   depmap/OmicsSomaticMutations.csv                      DepMap mutations (seed-lost lines)            needed for SL by mutation
+#   depmap/OmicsExpressionTPMLogp1HumanProteinCodingGenes.csv  DepMap expression (SL fallback; older name OmicsExpressionProteinCodingGenesTPMLogp1.csv also accepted)
+#   hpa/rna_tissue_consensus_tissues.tsv                  HPA tissue consensus (only for --tissue)
+#   target_net_cache/                                     anything the tool downloads itself
 
 cache_dir: ~/Documents/database/target_net_cache
-allow_download: true          # false = offline: every database must have a local path
+allow_download: true            # true: a database without a local path is fetched into cache_dir; false: strictly offline (missing file = stop, STRING skipped)
 
 databases:
-  signor:                     # SIGNOR all_data_DD_MM_YY.tsv or API dump, CC-BY 4.0
+
+  # ---- walk graph: signed, directed signaling edges (required) --------------------------------------------
+  signor:
     path: ~/Documents/database/signor/all_data_12_07_26.tsv
-    indirect: drop            # drop (default) | weight | keep  -- SIGNOR relations with DIRECT=NO are pathway-level shortcuts
-  reactome_fi:                # Reactome FI network with annotations (.txt or .zip), CC0
+    source: file                # file (path above, or SIGNOR API download when path is null) | omnipath (SIGNOR mirror; no SCORE/DIRECT columns)
+    indirect: drop              # DIRECT=NO rows: drop (default) | weight (keep at 30 % weight) | keep
+    # url: https://signor.uniroma2.it/getData.php?organism=9606     (used only when path is null and source is file)
+
+  # ---- context layer: physical / pathway co-membership (not used for the walk by default) -----------------
+  reactome_fi:
     path: ~/Documents/database/reactome/FIsInGene_061424_with_annotations.txt
-    mode: context             # context (default) | directed | off  -- FIs collapse whole pathways into one edge; walk on SIGNOR only
-    min_score: 1.0            # keep FI score >= this (1.0 = pathway-annotated only; predicted FIs are always dropped)
-    weight: 0.5               # walk weight of Reactome-only directed edges (SIGNOR 0.9) -> curated SIGNOR routes win
-  tf_list:                    # Lambert 2018 human TFs (DatabaseExtract_v_1.01.csv), CC-BY
-    path: ~/Documents/database/tf/DatabaseExtract_v_1.01.csv
-  uniprot:                    # bulk human reviewed UniProt tsv (fields: accession, gene_primary, keyword, cc_subcellular_location)
-    path: ~/Documents/database/uniprot/uniprot_human_reviewed.tsv   # gives receptors + compartments offline; download once:
-    # curl -o uniprot_human_reviewed.tsv "https://rest.uniprot.org/uniprotkb/stream?query=organism_id:9606+AND+reviewed:true&fields=accession,gene_primary,keyword,cc_subcellular_location&format=tsv"
-  receptors:                  # optional override: plain text, one HGNC symbol per line
-    path: null
-  regulon:                    # DoRothEA / CollecTRI regulons
-    source: dorothea          # dorothea | collectri
-    conf: ABC                 # DoRothEA confidence levels to keep
-    license: commercial       # OmniPath per-record licence filter: commercial | academic | ignore
-    path: ~/Documents/database/dorothea/dorothea_ABC_commercial.tsv   # OmniPath export or tf,target,mor,confidence; null = download
-    # download once:  python target_net.py regulon-url   (prints the URL)  ->  curl -o <path> "<url>"
+    mode: context               # context (default: undirected context edges only) | directed (mechanistic FIs join the walk at `weight`) | off
+    min_score: 1.0              # FI score threshold when mode=directed (1.0 = pathway-annotated; predicted FIs are always dropped)
+    weight: 0.5                 # walk weight of Reactome-only directed edges when mode=directed (SIGNOR = 0.9)
   string:
-    min_score: 700            # STRING physical network, experimental+database channels, via API
-  compartments:               # tsv: gene <TAB> compartment (membrane|cytosol|lysosome|mitochondrion|ER_golgi|nucleus); null = UniProt API
-    path: null
-  depmap:                     # folder with CRISPRGeneEffect.csv, OmicsSomaticMutations.csv, OmicsExpression*ProteinCoding*.csv (either release name)
-    dir: ~/Documents/database/depmap
-  hpa_tissue:                 # HPA rna_tissue_consensus.tsv(.zip), CC BY-SA (filter only)
-    path: ~/Documents/database/hpa/rna_tissue_consensus_tissues.tsv
+    min_score: 700              # STRING physical network via API (experimental + database channels); annotation column physical_with_seed
 
+  # ---- endpoints and annotations ----------------------------------------------------------------------------
+  uniprot:
+    path: ~/Documents/database/uniprot/uniprot_human_reviewed.tsv   # receptors (keyword Receptor + cell membrane) and compartments, offline
+    # download once:
+    # curl -o uniprot_human_reviewed.tsv "https://rest.uniprot.org/uniprotkb/stream?query=organism_id:9606+AND+reviewed:true&fields=accession,gene_primary,keyword,cc_subcellular_location&format=tsv"
+  receptors:
+    path: null                  # optional override: text file, one HGNC symbol per line (else derived from uniprot, else UniProt API)
+  compartments:
+    path: null                  # optional override: tsv gene<TAB>compartment (membrane|cytosol|lysosome|mitochondrion|ER_golgi|nucleus)
+  tf_list:
+    path: ~/Documents/database/tf/DatabaseExtract_v_1.01.csv        # Lambert 2018; rows with "Is TF? = Yes" are the downstream endpoints
+  regulon:
+    source: dorothea            # dorothea | collectri (OmniPath dataset name)
+    conf: ABC                   # DoRothEA confidence levels kept
+    license: commercial         # OmniPath per-record licence filter: commercial | academic | ignore
+    path: ~/Documents/database/dorothea/dorothea_ABC_commercial.tsv  # OmniPath export, or tf,target,mor,confidence; null = download
+  hpa_tissue:
+    path: ~/Documents/database/hpa/rna_tissue_consensus_tissues.tsv  # columns Gene name, Tissue, nTPM; used only with --tissue NAME
+
+  # ---- genetics -------------------------------------------------------------------------------------------
+  depmap:
+    dir: ~/Documents/database/depmap   # CRISPRGeneEffect.csv (+ OmicsSomaticMutations.csv, OmicsExpression*ProteinCoding*.csv); file names resolved automatically
+
+# ---- walk parameters (upstream / downstream modes) --------------------------------------------------------
 walk:
-  max_depth: 5
-  min_score: 0.25           # live AKT1: 0.2 -> 903 nodes/79 receptors, 0.3 -> 222/13; 0.25 is the compromise
-  hub_penalty: 0.25
+  max_depth: 5                  # hops from the seed
+  min_score: 0.25               # drop nodes whose best-path score (edge weights x hub penalty) is below this; live AKT1: 0.2 -> 903 nodes/79 receptors, 0.3 -> 222/13
+  hub_penalty: 0.25             # 0 = none, 0.5 = strong down-weighting of highly connected nodes
 
-crosstalk:                  # cross-talk mode walks are deliberately local (hubs like AKT1 reach most of the graph at depth 5)
+# ---- cross-talk mode: deliberately local walks (hubs reach most of the graph at depth 5) -------------------
+crosstalk:
   max_depth: 3
   min_score: 0.3
-  min_sign_confidence: 0.5  # endpoints count as synergistic/antagonistic only when both signs are this confident
-  max_edges_plot: 40        # interference edges drawn (ranked by proximity); all are in interference.csv
+  min_sign_confidence: 0.5      # endpoints count as synergistic/antagonistic only when both signs are at least this confident
+  max_edges_plot: 40            # interference edges drawn in the figure (all are in interference.csv)
 
+# ---- synthetic lethality (sl mode / research_gene) --------------------------------------------------------
 sl:
-  min_lost: 20
-  padj: 0.05
-  delta: 0.15
+  min_lost: 20                  # minimum cell lines with likely loss of the seed (else expression fallback, else skipped)
+  padj: 0.05                    # BH-FDR threshold
+  delta: 0.15                   # gene-effect difference threshold (seed-lost minus intact, must be below -delta)

@@ -82,26 +82,16 @@ python fetch_depmap.py --out ~/Documents/database/depmap          # downloads th
   uniprot/uniprot_human_reviewed.tsv
   tf/DatabaseExtract_v_1.01.csv
   dorothea/dorothea_ABC_commercial.tsv
-  depmap/CRISPRGeneEffect.csv  OmicsSomaticMutations.csv  [OmicsExpressionProteinCodingGenesTPMLogp1.csv]
+  depmap/CRISPRGeneEffect.csv  OmicsSomaticMutations.csv  [OmicsExpressionTPMLogp1HumanProteinCodingGenes.csv]
   hpa/rna_tissue_consensus_tissues.tsv
   target_net_cache/            (anything the tool downloads itself)
 ```
-```yaml
-# target_net.yaml  (project root)
-cache_dir: ~/Documents/database/target_net_cache
-allow_download: true
-databases:
-  signor:      {path: ~/Documents/database/signor/all_data_12_07_26.tsv}
-  reactome_fi: {path: ~/Documents/database/reactome/FIsInGene_061424_with_annotations.txt}
-  uniprot:     {path: ~/Documents/database/uniprot/uniprot_human_reviewed.tsv}
-  tf_list:     {path: ~/Documents/database/tf/DatabaseExtract_v_1.01.csv}
-  regulon:     {source: dorothea, conf: ABC, license: commercial, path: ~/Documents/database/dorothea/dorothea_ABC_commercial.tsv}
-  depmap:      {dir:  ~/Documents/database/depmap}
-  hpa_tissue:  {path: ~/Documents/database/hpa/rna_tissue_consensus_tissues.tsv}
-```
+`config.example.yaml` in the project root is the complete template for this layout (every key with its default and a
+comment); `cp config.example.yaml target_net.yaml` and edit only the paths that differ.
 
 ## Verify
 ```bash
+python target_net.py check-config                     # per database: path, ok / MISSING / not set, size, options, fallback
 python target_net.py upstream --gene AKT1 --config target_net.yaml
 ```
 Expected log lines: `[config] target_net.yaml` · `[SIGNOR] source: … rows N -> human M -> protein-protein unique edges K` (K ≫ 10,000) ·

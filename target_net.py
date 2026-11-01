@@ -269,6 +269,43 @@ def apply_config(args):
     return cfg
 
 
+def check_config(cfg):
+    """Print, per database, what the loaders will actually use with this config."""
+    import glob as _g
+    def human(n): return f"{n/1e6:,.1f} MB" if n > 1e6 else f"{n/1e3:,.0f} kB"
+    def status(path):
+        if not path: return ("not set", "")
+        pth = os.path.expanduser(path)
+        if os.path.isdir(pth): return ("folder", "")
+        return ("ok", human(os.path.getsize(pth))) if os.path.exists(pth) else ("MISSING", "")
+    dl = cfg.get("allow_download", True)
+    print(f"config file : {cfg['_file'] or 'none (built-in defaults)'}")
+    print(f"cache_dir   : {cfg['cache_dir']}   allow_download: {dl}")
+    rows = [
+      ("signor", "walk graph (required)", Cf.db(cfg, "signor"), f"source={Cf.db(cfg,'signor','source') or 'file'}, indirect={Cf.db(cfg,'signor','indirect') or 'drop'}", "download from SIGNOR, else OmniPath mirror"),
+      ("reactome_fi", "context layer (mode=context) / walk (mode=directed)", Cf.db(cfg, "reactome_fi"), f"mode={Cf.db(cfg,'reactome_fi','mode') or 'context'}", "download 2023 release"),
+      ("uniprot", "receptors + compartments (bulk, offline)", Cf.db(cfg, "uniprot"), "", "per-gene UniProt API (slow)"),
+      ("receptors", "optional override of the receptor list", Cf.db(cfg, "receptors"), "", "derived from uniprot"),
+      ("compartments", "optional override of compartments", Cf.db(cfg, "compartments"), "", "derived from uniprot"),
+      ("tf_list", "downstream endpoints (required for downstream/crosstalk)", Cf.db(cfg, "tf_list"), "", "download Lambert 2018"),
+      ("regulon", "TF -> target genes", Cf.db(cfg, "regulon"), f"source={Cf.db(cfg,'regulon','source')}, conf={Cf.db(cfg,'regulon','conf')}, license={Cf.db(cfg,'regulon','license')}", "download via OmniPath"),
+      ("hpa_tissue", "expression filter (--tissue only)", Cf.db(cfg, "hpa_tissue"), "", "download HPA consensus"),
+    ]
+    print(f"\n{'database':<14}{'used for':<52}{'status':<9}{'size':<10}path / options")
+    for name, use, path, opts, fallback in rows:
+        st, size = status(path)
+        note = "" if st in ("ok", "folder") else (f"-> {fallback}" if dl else "-> STOP (allow_download is false)")
+        print(f"{name:<14}{use:<52}{st:<9}{size:<10}{path or ''}  {opts}  {note}")
+    d = Cf.db(cfg, "depmap", "dir")
+    print(f"\ndepmap dir    : {d or 'not set'}")
+    if d and os.path.isdir(os.path.expanduser(d)):
+        for kind, use in [("effect", "co-essentiality (required for genetics)"), ("mutations", "SL: seed-lost lines by LoF mutation"), ("expression", "SL fallback: lowest-quartile expression")]:
+            f = D.depmap_file(os.path.expanduser(d), kind)
+            print(f"  {kind:<11}{use:<46}{'ok' if f else 'MISSING':<9}{human(os.path.getsize(f)) if f else '':<10}{os.path.basename(f) if f else ''}")
+    print(f"\nstring        : API only (min_score {Cf.db(cfg,'string','min_score')}) -> {'used' if dl else 'skipped (offline)'}")
+    print(f"walk          : {cfg['walk']}\ncrosstalk     : {cfg.get('crosstalk')}\nsl            : {cfg['sl']}")
+
+
 def _edges(G, keep):
     return [dict(source=a, target=b, effect=d["effect"], weight=d["weight"], residue=d["residue"], db=d["source"])
             for a, b, d in G.edges(data=True) if a in keep and b in keep]
@@ -297,6 +334,8 @@ def main():
     p = sub.add_parser("upstream"); p.add_argument("--gene", required=True); common(p)
     p = sub.add_parser("downstream"); p.add_argument("--gene", required=True); common(p); regulon_opts(p)
     p = sub.add_parser("sl"); p.add_argument("--gene", required=True); common(p)
+    p = sub.add_parser("check-config", help="show which file each database loader will use with the current YAML")
+    p.add_argument("--config", default=None)
     p = sub.add_parser("regulon-url", help="print (or --save FILE) the OmniPath URL for the configured regulon")
     p.add_argument("--save", default=None); p.add_argument("--config", default=None)
     p.add_argument("--source", default=None); p.add_argument("--conf", default=None); p.add_argument("--license", default=None)
@@ -304,6 +343,8 @@ def main():
     args = ap.parse_args()
     args._explicit_depth = getattr(args, "max_depth", None) is not None
     args._explicit_score = getattr(args, "min_score", None) is not None
+    if args.mode == "check-config":
+        cfg = Cf.load_config(args.config); D.set_config(cfg); check_config(cfg); return
     if args.mode == "regulon-url":
         cfg = Cf.load_config(args.config)
         url = D.omnipath_regulon_url(args.source or Cf.db(cfg, "regulon", "source") or "dorothea", args.conf or Cf.db(cfg, "regulon", "conf") or "ABC",

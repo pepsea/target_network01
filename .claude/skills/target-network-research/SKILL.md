@@ -28,25 +28,14 @@ All database paths are read from a YAML file, searched in this order: `--config`
 1. Look for `target_net.yaml` in the project root or `~/.target_net.yaml`. If none exists, copy `config.example.yaml`
    to `target_net.yaml` and fill in the paths the user already has locally. Ask the user for locations of local copies
    only if the listing / `~/data` search finds nothing; do not download gigabytes without saying so.
-2. Keys (all optional; `null` = download into `cache_dir` when `allow_download: true`):
-   ```yaml
-   cache_dir: ~/data/target_net_cache
-   allow_download: true            # false = strict offline; every needed database must have a path
-   databases:
-     signor:       {path: ~/data/signor/signor_human.tsv}            # CC-BY 4.0
-     reactome_fi:  {path: ~/data/reactome/FIsInGene_*.txt.zip}       # CC0
-     tf_list:      {path: ~/data/tf/DatabaseExtract_v_1.01.csv}      # Lambert 2018, CC-BY
-     receptors:    {path: null}                                       # txt, one symbol per line; null = UniProt API
-     regulon:      {source: dorothea, conf: ABC, path: ~/data/dorothea/dorothea_hs_ABC.tsv}   # tsv tf,target,mor,confidence
-     string:       {min_score: 700}                                   # API only (skipped when allow_download is false)
-     compartments: {path: null}                                       # tsv gene<TAB>compartment; null = UniProt API
-     depmap:       {dir: ~/data/depmap}                               # CRISPRGeneEffect.csv [+ mutations, expression]
-     hpa_tissue:   {path: ~/data/hpa/rna_tissue_consensus.tsv.zip}    # CC BY-SA, filter only
-   walk: {max_depth: 6, min_score: 0.15, hub_penalty: 0.25}
-   sl:   {min_lost: 20, padj: 0.05, delta: 0.15}
-   ```
-3. Validate: `python target_net.py upstream --gene AKT1 --config target_net.yaml` prints `[config] <file>` and one
-   `source:` line per database. A message like `signor: no local file and allow_download is false` names the exact
+2. Keys: `config.example.yaml` is generated from the code's defaults and lists every key the loaders read
+   (`databases.<name>.path|dir`, `signor.source/indirect`, `reactome_fi.mode`, `regulon.source/conf/license`,
+   `walk`, `crosstalk`, `sl`), with the expected folder layout under one root (`~/Documents/database/...`). Do not copy an
+   older key list from memory; read that file.
+3. Validate: `python target_net.py check-config [--config FILE]` prints, per database, the configured path, whether it
+   exists (ok / MISSING / not set), its size, the options in force and what happens otherwise (download or STOP). Fix every
+   MISSING row the user has locally before running. Then `python target_net.py upstream --gene AKT1 --config target_net.yaml`
+   prints `[config] <file>` and one `source:` line per database. A message like `signor: no local file and allow_download is false` names the exact
    key to fix. DepMap missing → co-essentiality and the `sl` mode are skipped; offer `python fetch_depmap.py --out <dir>` (~1.5 GB).
 4. Record the config path you used in the notebook's parameters cell (`CONFIG = "../target_net.yaml"`).
 

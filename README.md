@@ -23,6 +23,7 @@ the DepMap part of the demo is **simulated** and labelled as such).
 Copy `config.example.yaml` to `target_net.yaml` (project root) or `~/.target_net.yaml` and set the local paths of each
 database; anything left `null` is downloaded into `cache_dir` when `allow_download: true`. `--config FILE` / `config=` overrides.
 `allow_download: false` makes runs strictly offline and reports the exact YAML key that is missing.
+`python target_net.py check-config` shows, per database, which file will actually be used (ok / MISSING / not set, size, options, fallback) and the DepMap files it resolves.
 
 ## Claude Code skill
 `.claude/skills/target-network-research/SKILL.md` — Claude Code picks it up automatically when this folder is the project
