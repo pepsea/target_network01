@@ -725,24 +725,20 @@ def interference_screen_figure(table_path, width=900, height=600, caption=True, 
     core = tab.attrs.get("core", "") if hasattr(tab, "attrs") else ""
     if not len(tab): return _base("interference screen: no targets scored", width, height)
     fig = _base(f"interference screen{(' on the ' + core + ' network') if core else ''}: {len(tab)} candidate targets", width, height)
-    nd_col = "net_direction" if "net_direction" in tab.columns else "down_share"
-    def col(d):
-        if pd.isna(d): return "#cfcfcf"
-        if nd_col == "down_share": d = -(2 * d - 1)
-        if d <= -0.4: return "#3a6fb0"
-        if d >= 0.4: return "#c0392b"
-        return "#9a9a9a"
+    nd = tab["net_direction"] if "net_direction" in tab.columns else -(2 * tab["down_share"] - 1)
+    nd = nd.fillna(0.0)
     size = 8 + 4 * tab.direct_entries.clip(0, 10)
-    txt = [r.target if r["rank"] <= label_top else "" for _, r in tab.iterrows()]
+    txt = [(f"{r.target}  {r.net_direction:+.2f}" if ("net_direction" in tab.columns and pd.notna(r.net_direction)) else r.target) if r["rank"] <= label_top else "" for _, r in tab.iterrows()]
     hv = [f"<b>{r.target}</b> rank {r['rank']}<br>TFs changed {r.tfs_changed} ({r.tfs_down}↓ {r.tfs_up}↑), index {r.flow_change_index}<br>|delta| at TFs {r.tf_delta_total}"
-          + (f" (down {r.tf_delta_down}, up {r.tf_delta_up}, net {r.net_tf_delta:+.2f})" if "net_tf_delta" in tab.columns else "")
+          + (f" (down {r.tf_delta_down}, up {r.tf_delta_up}, net {r.net_tf_delta:+.2f}, direction {r.net_direction:+.2f})" if "net_tf_delta" in tab.columns and pd.notna(r.net_direction) else "")
           + f"<br>direct entries {r.direct_entries}, entry edges {r.entry_edges}<br>genes {r.genes_down}↓ {r.genes_up}↑"
           + (f"<br>baseline z {r.baseline_z:+.2f}" if pd.notna(r.get("baseline_z", float("nan"))) else "") + f"<br>{r.top_tfs}" for _, r in tab.iterrows()]
+    DIV = [[0.0, "#3a6fb0"], [0.5, "#bdbdbd"], [1.0, "#c0392b"]]
     fig.add_trace(go.Scatter(x=tab.flow_change_index, y=tab.tf_delta_total, mode="markers+text", text=txt, textposition="top center", textfont=dict(size=10),
-                             marker=dict(size=size, color=[col(d) for d in tab[nd_col]], line=dict(color="#333", width=1)), hovertext=hv, hoverinfo="text", showlegend=False))
-    for name, c in [("net DOWN: inhibition silences CORE output", "#3a6fb0"), ("net UP: inhibition raises CORE output (brake release)", "#c0392b"), ("balanced / context-dependent", "#9a9a9a")]:
-        fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers", marker=dict(size=10, color=c, line=dict(color="#333", width=1)), name=name))
-    fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers", marker=dict(size=22, color="#fff", line=dict(color="#333", width=1)), name="size = direct entry points"))
+                             marker=dict(size=size, color=nd, colorscale=DIV, cmin=-1, cmax=1, showscale=True, line=dict(color="#333", width=1),
+                                         colorbar=dict(title=dict(text="net direction", side="right", font=dict(size=10)), tickvals=[-1, 0, 1], ticktext=["−1 output down", "0 balanced", "+1 output up"], tickfont=dict(size=9), len=0.55, thickness=12, x=1.02)),
+                             hovertext=hv, hoverinfo="text", showlegend=False))
+    fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers", marker=dict(size=22, color="#fff", line=dict(color="#333", width=1)), name="size = direct entry points · label = net direction (−1…+1)"))
     xmax = max(0.2, float(tab.flow_change_index.max()) * 1.2); ymax = max(0.5, float(tab.tf_delta_total.max()) * 1.2)
     fig.update_xaxes(visible=True, showticklabels=True, title="flow-change index (fraction of CORE TFs changed)", showgrid=True, gridcolor="#eee", zeroline=False, range=[-0.03 * xmax, xmax], linecolor="#999")
     fig.update_yaxes(visible=True, showticklabels=True, title="total |delta| at CORE TFs (relative units)", showgrid=True, gridcolor="#eee", zeroline=False, range=[-0.05 * ymax, ymax], linecolor="#999")
@@ -768,23 +764,20 @@ def screen_figure(table_path, width=900, height=600, caption=True, label_top=25)
     if not len(tab): return _base("cross-talk screen: no targets scored", width, height)
     core = tab.attrs.get("core", "") if hasattr(tab, "attrs") else ""
     fig = _base(f"cross-talk screen{(' against ' + core) if core else ''}: {len(tab)} candidate targets", width, height)
-    def col(d):
-        if d > 0.2: return "#3f8f8f"
-        if d < -0.2: return "#b36b3c"
-        return "#9a9a9a"
     size = 8 + 30 * tab.dependency.clip(0, 1)
-    txt = [r.target if r["rank"] <= label_top else "" for _, r in tab.iterrows()]
+    txt = [(f"{r.target}  {r.net_direction:+.2f}") if r["rank"] <= label_top else "" for _, r in tab.iterrows()]
     hv = [f"<b>{r.target}</b>  rank {r['rank']}<br>interference {r.interference_score:.2f} ({r.n_interference} edges)"
           f"<br>TF enrichment {r.tf_enrichment:.2f}, p = {r.tf_p:.2g}<br>dependency {r.dependency:.2f}"
-          f"<br>interference edges syn/ant {r.syn_edges}/{r.ant_edges}; shared endpoints syn/ant {r.syn_endpoints}/{r.ant_endpoints} -> direction {r.net_direction:+.2f}"
+          + (f"<br>edges syn/ant {r.syn_edges}/{r.ant_edges}; endpoints syn/ant {r.syn_endpoints}/{r.ant_endpoints}" if "syn_edges" in tab.columns else "")
+          + f" -> net direction {r.net_direction:+.2f}"
           + (f"<br>baseline z {r.baseline_z:+.2f} (pct {r.baseline_pct})" if pd.notna(r.get("baseline_z", float("nan"))) else "")
           + f"<br>{r.top_edges}" for _, r in tab.iterrows()]
+    DIV = [[0.0, "#b36b3c"], [0.5, "#bdbdbd"], [1.0, "#3f8f8f"]]
     fig.add_trace(go.Scatter(x=tab.interference_score, y=tab.tf_enrichment, mode="markers+text", text=txt, textposition="top center",
-                             textfont=dict(size=10), marker=dict(size=size, color=[col(d) for d in tab.net_direction], line=dict(color="#333", width=1)),
+                             textfont=dict(size=10), marker=dict(size=size, color=tab.net_direction.fillna(0.0), colorscale=DIV, cmin=-1, cmax=1, showscale=True, line=dict(color="#333", width=1),
+                             colorbar=dict(title=dict(text="net direction", side="right", font=dict(size=10)), tickvals=[-1, 0, 1], ticktext=["−1 antagonistic", "0 balanced", "+1 synergistic"], tickfont=dict(size=9), len=0.55, thickness=12, x=1.02)),
                              hovertext=hv, hoverinfo="text", name="candidate target", showlegend=False))
-    for name, c in [("synergistic with core", "#3f8f8f"), ("antagonistic to core", "#b36b3c"), ("balanced / none", "#9a9a9a")]:
-        fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers", marker=dict(size=10, color=c, line=dict(color="#333", width=1)), name=name))
-    fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers", marker=dict(size=22, color="#fff", line=dict(color="#333", width=1)), name="size = dependency of core on target"))
+    fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers", marker=dict(size=22, color="#fff", line=dict(color="#333", width=1)), name="size = dependency of core on target · label = net direction (−1 antagonistic … +1 synergistic)"))
     xmax = max(0.5, float(tab.interference_score.max()) * 1.15); ymax = max(1.5, float(tab.tf_enrichment.max()) * 1.2)
     fig.update_xaxes(visible=True, showticklabels=True, title="interference score (proximity-weighted edges into the core pathway)", showgrid=True, gridcolor="#eee", zeroline=False, range=[-0.03 * xmax, xmax], linecolor="#999")
     fig.update_yaxes(visible=True, showticklabels=True, title="TF-overlap enrichment (observed / expected shared TFs)", showgrid=True, gridcolor="#eee", zeroline=False, range=[-0.05 * ymax, ymax], linecolor="#999")
