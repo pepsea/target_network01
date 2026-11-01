@@ -65,12 +65,24 @@ def run_dir(args, tag):
     return d
 
 
-def write_html(tpl, token, payload, path):
-    """Write the standalone D3 view and, next to it, the same payload as JSON (used by targetnet.plots for Plotly figures)."""
-    html = open(os.path.join(TPL, tpl)).read().replace(token, json.dumps(payload))
-    open(path, "w").write(html)
-    with open(os.path.splitext(path)[0] + ".json", "w") as f:
+def write_html(tpl, token, payload, path, d3=False):
+    """Write the view payload as JSON and the standalone HTML view.
+    The HTML is the same Plotly figure the notebooks show (plotly.js from CDN), so file and notebook never disagree;
+    with d3=True the original D3 page is written as well (<name>_d3.html: force layout, draggable)."""
+    jp = os.path.splitext(path)[0] + ".json"
+    with open(jp, "w") as f:
         json.dump(payload, f)
+    try:
+        from targetnet import plots as P
+        kind = os.path.basename(jp)
+        fn = P.flow_figure if kind.startswith("flow") else P.cell_map_figure if kind.startswith("cell_map") else \
+             P.crosstalk_figure if kind.startswith("crosstalk") else P.volcano_figure
+        fn(jp).write_html(path, include_plotlyjs="cdn", full_html=True)
+    except Exception as e:   # plotly missing or figure error: fall back to the D3 page so a view always exists
+        print(f"[view] Plotly export failed ({e.__class__.__name__}: {e}); writing D3 page instead"); d3 = True
+        open(path, "w").write(open(os.path.join(TPL, tpl)).read().replace(token, json.dumps(payload)))
+    if d3:
+        open(os.path.splitext(path)[0] + "_d3.html", "w").write(open(os.path.join(TPL, tpl)).read().replace(token, json.dumps(payload)))
 
 
 def annotate(df, G, gene, args, und):
@@ -130,8 +142,8 @@ def run_upstream(args):
                             coess=r.coessentiality_r, compartment=r.compartment, cls="node") for r in df.itertuples()] +
                       [dict(id=gene, hops=0, score=1.0, sign=1, is_endpoint=False, best_path=gene, cls="seed")],
                 edges=_edges(G, set(df.node) | {gene}))
-    write_html("flow.html", "/*__FLOW_JSON__*/", flow, os.path.join(out, "flow.html"))
-    write_html("cell_map.html", "/*__NETWORK_JSON__*/", cell_map_payload(gene, df, G, comp, "upstream", und), os.path.join(out, "cell_map.html"))
+    write_html("flow.html", "/*__FLOW_JSON__*/", flow, os.path.join(out, "flow.html"), d3=getattr(args, "d3", False))
+    write_html("cell_map.html", "/*__NETWORK_JSON__*/", cell_map_payload(gene, df, G, comp, "upstream", und), os.path.join(out, "cell_map.html"), d3=getattr(args, "d3", False))
     print(f"\n[upstream] {len(df)} nodes, {len(rec)} receptors -> {out}/")
     return df
     print(rec.head(12)[["node", "hops", "score", "influence", "sign", "sign_confidence", "best_path"]].to_string(index=False))
@@ -159,8 +171,8 @@ def run_downstream(args, gene=None, quiet=False, exclude=(), G=None, und=None):
                             coess=r.coessentiality_r, compartment=r.compartment, cls="node") for r in df.itertuples()] +
                       [dict(id=gene, hops=0, score=1.0, sign=1, is_endpoint=False, best_path=gene, cls="seed")],
                 edges=_edges(G, set(df.node) | {gene}))
-    write_html("flow.html", "/*__FLOW_JSON__*/", flow, os.path.join(out, "flow.html"))
-    write_html("cell_map.html", "/*__NETWORK_JSON__*/", cell_map_payload(gene, df, G, comp, "downstream", und), os.path.join(out, "cell_map.html"))
+    write_html("flow.html", "/*__FLOW_JSON__*/", flow, os.path.join(out, "flow.html"), d3=getattr(args, "d3", False))
+    write_html("cell_map.html", "/*__NETWORK_JSON__*/", cell_map_payload(gene, df, G, comp, "downstream", und), os.path.join(out, "cell_map.html"), d3=getattr(args, "d3", False))
     if not quiet:
         print(f"\n[downstream] {len(df)} nodes, {len(tf_df)} TFs, {genes.gene.nunique() if len(genes) else 0} genes -> {out}/")
         print(tf_df.head(12)[["node", "hops", "score", "influence", "sign", "sign_confidence", "best_path"]].to_string(index=False))
@@ -190,7 +202,7 @@ def run_sl(args):
     payload = dict(seed=gene, demo=bool(args.demo), thresholds=dict(padj=0.05, delta=0.15), n_lost=int(full.n_lost.iloc[0]),
                    points=json.loads(full[["gene", "delta", "padj", "n_lost", "significant", "on_pathway", "coessentiality_r"]].to_json(orient="records")),
                    top=json.loads(sig.head(30).to_json(orient="records")))
-    write_html("sl_plot.html", "/*__SL_JSON__*/", payload, os.path.join(out, "synthetic_lethality.html"))
+    write_html("sl_plot.html", "/*__SL_JSON__*/", payload, os.path.join(out, "synthetic_lethality.html"), d3=getattr(args, "d3", False))
     print(f"\n[sl] {len(sig)} hits -> {out}/"); print(sig.head(10)[["gene", "delta", "padj", "n_lost", "on_pathway"]].to_string(index=False))
 
 
@@ -228,7 +240,7 @@ def run_crosstalk(args):
                               sign_from_causal=int(r.sign_from_causal), sign_from_goi=int(r.sign_from_goi), agreement=r.agreement))
     payload = dict(causal=C, goi=X, summary=res["summary"], nodes=nodes, edges=_edges(G, {n["id"] for n in nodes}),
                    interference=json.loads(res["interference"].to_json(orient="records")) if len(res["interference"]) else [], endpoints=endpoints)
-    write_html("crosstalk.html", "/*__XT_JSON__*/", payload, os.path.join(out, "crosstalk.html"))
+    write_html("crosstalk.html", "/*__XT_JSON__*/", payload, os.path.join(out, "crosstalk.html"), d3=getattr(args, "d3", False))
     s = res["summary"]
     print(f"\n[crosstalk] {X} vs {C} pathway -> {out}/   (each pathway walked with the other gene removed)")
     print(f"  cross-talk index {s['crosstalk_index']}  (shared endpoints {s['n_shared_endpoints']} / causal endpoints {s['n_endpoints_causal']})")
@@ -267,6 +279,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="mode", required=True)
     def common(p):
+        p.add_argument("--d3", action="store_true", help="also write the original D3 pages (<view>_d3.html, force layout, draggable)")
         p.add_argument("--out", default="runs", help="root folder for run outputs (default: runs/<YYYYMMDD_HHMMSS>_<mode>_<genes>/)")
         p.add_argument("--config", default=None, help="YAML with database paths (default: ./target_net.yaml, ~/.target_net.yaml, $TARGETNET_CONFIG)")
         p.add_argument("--demo", action="store_true", help="offline curated AKT1/MAPK1 axis (no network)")

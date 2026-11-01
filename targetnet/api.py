@@ -21,7 +21,7 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 import target_net as cli  # noqa: E402
 
-DEFAULTS = dict(out="runs", config=None, demo=False, max_depth=None, min_score=None, hub_penalty=None, tissue=None, expressed_file=None,
+DEFAULTS = dict(out="runs", d3=False, config=None, demo=False, max_depth=None, min_score=None, hub_penalty=None, tissue=None, expressed_file=None,
                 no_reactome=False, reactome_fi=None, depmap=None, regulon=None, conf=None, regulon_file=None, max_targets=None)
 
 
@@ -109,7 +109,7 @@ def legend(kind):
 
 
 def show(html_path, height=650):
-    """Render a saved HTML view inside the notebook."""
+    """Render a saved HTML view (the same Plotly figure, self-contained) inside the notebook via an IFrame."""
     from IPython.display import IFrame, display
     if not os.path.exists(html_path):
         print(f"(no view at {html_path})"); return

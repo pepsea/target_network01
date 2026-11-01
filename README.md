@@ -84,6 +84,8 @@ Every node table carries: hops, path score, sign, ambiguous, best_path, feedback
 coessentiality_r, physical_with_seed (STRING / Reactome undirected), degree, compartment (UniProt).
 
 ## Views
+The `.html` files in each run folder are the same Plotly figures the notebooks show (self-contained, plotly.js from CDN), so file and notebook
+never disagree. `--d3` (CLI) / `d3=True` (API) additionally writes the original D3 pages as `<view>_d3.html` (force layout, draggable nodes).
 Every Plotly figure carries a caption explaining its lines (▶ activation, ┃ inhibition, dotted = unknown sign, light dotted = physical contact,
 thick green/red = synergistic/antagonistic interference, long-dash = chaperone) and nodes; `api.legend(kind)` prints the same key as text.
 **Focus list**: `figure(view, focus=[...])` / `FOCUS` in the notebooks highlights a gene list (e.g. proteomics hits; a file with
