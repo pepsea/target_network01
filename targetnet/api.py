@@ -183,7 +183,7 @@ def figure(view_path, focus=None, **kw):
     kind = os.path.basename(jp)
     if kind.startswith("hop1"):
         kw.setdefault("max_nodes", 10**6); kw.setdefault("sub_max", 6); return plots.flow_figure(jp, **kw)
-    if kind.startswith("cell_flow"):
+    if kind.startswith(("cell_flow", "core_map")):
         return plots.cell_flow_figure(jp, **kw)
     fn = plots.flow_figure if kind.startswith(("flow", "core_impact")) else plots.cell_map_figure if kind.startswith("cell_map") else \
          plots.crosstalk_figure if kind.startswith("crosstalk") else plots.volcano_figure
@@ -254,7 +254,8 @@ def screen_interference(core, targets, **options):
     for f in sorted(os.listdir(out)):
         if f.startswith("flow_change_") and f.endswith(".csv"): per[f[len("flow_change_"):-4]] = _read(f"{out}/{f}")
     return dict(core=cli.resolve_symbol(core), table=tab, baseline=_read(f"{out}/baseline_random.csv"), run_dir=a.run_dir,
-                view=f"{out}/interference_screen.html", per_target=per)
+                view=f"{out}/interference_screen.html", views=dict(screen=f"{out}/interference_screen.html", direction=f"{out}/interference_direction.html",
+                                                                     core_map=f"{out}/core_map_targets.html"), per_target=per)
 
 
 def interference_screen_figure(x, **kw):

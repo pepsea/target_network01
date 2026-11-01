@@ -83,7 +83,7 @@ def write_html(tpl, token, payload, path, d3=False):
         kind = os.path.basename(jp)
         if kind.startswith("hop1"):
             fig = P.flow_figure(jp, max_nodes=10**6, sub_max=6)
-        elif kind.startswith("cell_flow"):
+        elif kind.startswith(("cell_flow", "core_map")):
             fig = P.cell_flow_figure(jp)
         else:
             fn = P.flow_figure if kind.startswith(("flow", "core_impact")) else P.cell_map_figure if kind.startswith("cell_map") else \
@@ -367,6 +367,17 @@ def run_interference_screen(args):
     if len(res["baseline"]): res["baseline"].to_csv(os.path.join(out, "baseline_random.csv"), index=False)
     for X, r in res["details"].items():
         nd = r["nodes"]; nd[nd.direction != "unchanged"].to_csv(os.path.join(out, f"flow_change_{X}.csv"), index=False)
+    # the scores on the 2-D map: CORE cross-section with the candidates as scored diamonds
+    cell = json.load(open(os.path.join(root, "downstream", "flow.json")))
+    for n in cell["nodes"]: n.setdefault("compartment", "cytosol")
+    tl = []
+    for r in tab.itertuples():
+        nd = res["details"][r.target]["nodes"]; ent = nd[nd.entry == "direct"]
+        tl.append(dict(target=r.target, rank=int(r.rank), score=float(r.tf_delta_total), down=float(r.tf_delta_down), up=float(r.tf_delta_up),
+                       net_direction=None if pd.isna(r.net_direction) else float(r.net_direction), composite=float(r.composite), tfs_changed=int(r.tfs_changed),
+                       direct_entries=int(r.direct_entries), baseline_z=None if pd.isna(r.baseline_z) else float(r.baseline_z),
+                       entries=list(ent.reindex(ent.delta.abs().sort_values(ascending=False).index).node)))
+    write_html("flow.html", "/*__FLOW_JSON__*/", dict(cell, perturbation=dict(mode="targets", targets=tl)), os.path.join(out, "core_map_targets.html"), d3=False)
     json.dump(dict(core=C, targets=targets, skipped=res["skipped"]), open(os.path.join(out, "screen_info.json"), "w"), indent=1)
     if len(tab):
         from targetnet import plots as P
