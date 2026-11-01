@@ -11,6 +11,7 @@ past max_depth, or below min_score.
 """
 import heapq, math
 import networkx as nx
+import numpy as np
 import pandas as pd
 
 
@@ -70,8 +71,53 @@ def signed_walk(G, seed, endpoints, direction="down", max_depth=6, min_score=0.1
         mixed = other is not None and other[0] >= 0.8 * sc
         rows.append(dict(node=n, hops=hp, score=round(sc, 4), sign=0 if mixed else sg, ambiguous=amb or mixed,
                          is_endpoint=n in endpoints, best_path=" > ".join(path if direction == "down" else path[::-1])))
-    df = pd.DataFrame(rows).sort_values(["hops", "score"], ascending=[True, False]).reset_index(drop=True)
+    df = pd.DataFrame(rows)
+    if len(df):
+        inf = signed_influence(G, seed, [seed] + list(df.node), direction, max_depth, hub_strength)
+        df = df.rename(columns={"sign": "sign_bestpath"}).merge(inf, on="node", how="left")
+        # consensus sign over all paths is the reported sign; best-path sign kept for reference
+        df["sign"] = df.sign_consensus.fillna(df.sign_bestpath).astype(int)
+        df["ambiguous"] = df.ambiguous | (df.sign == 0)
+        df = df[["node", "hops", "score", "influence", "sign", "sign_confidence", "sign_bestpath", "ambiguous", "is_endpoint", "best_path"]]
+    df = df.sort_values(["hops", "score"], ascending=[True, False]).reset_index(drop=True)
     return df
+
+
+def signed_influence(G, seed, nodes, direction="down", max_depth=5, hub_strength=0.25):
+    """
+    Consensus sign over ALL walks (not just the best path): two-state influence propagation.
+      p = activating influence, n = inhibiting influence reaching each node from the seed.
+      step: p' = Wpos^T p + Wneg^T n ; n' = Wpos^T n + Wneg^T p   (ambiguous edges feed both states at half weight)
+      summed over 1..max_depth steps; the seed is not re-entered.
+    Returns DataFrame node, influence (p+n), sign_consensus (+1/-1/0), sign_confidence (|p-n|/(p+n)).
+    """
+    from scipy import sparse
+    idx = {n: i for i, n in enumerate(nodes)}; N = len(nodes)
+    if seed not in idx or N == 0: return pd.DataFrame(columns=["node", "influence", "sign_consensus", "sign_confidence"])
+    pen = hub_penalty(G, strength=hub_strength)
+    rows_p, cols_p, w_p, rows_n, cols_n, w_n, rows_a, cols_a, w_a = [], [], [], [], [], [], [], [], []
+    for a, b, d in G.edges(data=True):
+        if a not in idx or b not in idx: continue
+        src, dst = (a, b) if direction == "down" else (b, a)          # walk direction
+        w = d["weight"] * pen.get(dst, 1.0)
+        tgt = (rows_p, cols_p, w_p) if d["effect"] == 1 else (rows_n, cols_n, w_n) if d["effect"] == -1 else (rows_a, cols_a, w_a)
+        tgt[0].append(idx[src]); tgt[1].append(idx[dst]); tgt[2].append(w)
+    M = lambda r, c, w: sparse.csr_matrix((w, (r, c)), shape=(N, N))
+    Wp, Wn, Wa = M(rows_p, cols_p, w_p), M(rows_n, cols_n, w_n), M(rows_a, cols_a, w_a)
+    p = np.zeros(N); n = np.zeros(N); p[idx[seed]] = 1.0
+    P = np.zeros(N); Nn = np.zeros(N)
+    for _ in range(max_depth):
+        amb = 0.5 * Wa.T @ (p + n)
+        p, n = Wp.T @ p + Wn.T @ n + amb, Wp.T @ n + Wn.T @ p + amb
+        p[idx[seed]] = 0; n[idx[seed]] = 0
+        P += p; Nn += n
+        if P.sum() + Nn.sum() == 0: break
+    tot = P + Nn
+    with np.errstate(divide="ignore", invalid="ignore"):
+        conf = np.where(tot > 0, np.abs(P - Nn) / tot, 0.0)
+    sign = np.where(P > 1.25 * Nn, 1, np.where(Nn > 1.25 * P, -1, 0))
+    out = pd.DataFrame({"node": nodes, "influence": np.round(tot, 4), "sign_consensus": sign, "sign_confidence": np.round(conf, 3)})
+    return out[out.node != seed]
 
 
 def extend_regulon(down_df, regulon, tfs, max_targets_per_tf=None):

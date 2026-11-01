@@ -6,7 +6,7 @@ Network-based drug-target research around a core gene. Entry points: `target_net
 ## Layout
 - `targetnet/config.py`  YAML config: database paths, download policy, walk/SL thresholds (`config.example.yaml` -> `target_net.yaml`)
 - `targetnet/data.py`    loaders (SIGNOR, Reactome FI, STRING, UniProt, Lambert TFs, DoRothEA/OmniPath, DepMap, HPA) + curated demo data
-- `targetnet/walk.py`    signed best-path walk over (node, sign) states; regulon extension; cross-talk logic
+- `targetnet/walk.py`    signed best-path walk (node set, score) + signed influence propagation (consensus sign, influence); regulon extension; cross-talk logic
 - `targetnet/templates/` D3 views: flow.html, cell_map.html, crosstalk.html, sl_plot.html (each view also written as .json)
 - `targetnet/plots.py`   Plotly versions of the four views for inline notebook use (read the .json next to each view)
 - `fetch_depmap.py`      DepMap downloader (portal API, Figshare fallback)
@@ -25,7 +25,7 @@ Notebooks: `jupyter nbconvert --to notebook --execute notebooks/gene_research.ip
 Expected textbook recovery: AKT1 upstream -> RTKs via PI3K/PDPK1; MAPK1 x AKT1 -> RSK->GSK3B S9, ERK-|SOS1 feedback.
 
 ## Open items
-- Live-data calibration (AKT1, 2026-11-01): SIGNOR 15,428 direct+indirect pp edges; Reactome FI 'mechanistic' still 109k -> default mode=context; SIGNOR DIRECT=NO dropped; walk defaults max_depth 5 / min_score 0.2. Re-check: upstream/downstream node counts should land ~100-400; receptors for AKT1 via PIK3CA/PDPK1
+- Live-data calibration (AKT1, 2026-11-01): SIGNOR 15,428 direct+indirect pp edges; Reactome FI 'mechanistic' still 109k -> default mode=context; SIGNOR DIRECT=NO dropped; walk defaults max_depth 5 / min_score 0.2. Second run (SIGNOR direct only, Reactome context): upstream 903 nodes / 79 receptors; receptor ranking sensible (RET, EGFR, FGFR1, IGF1R, PDGFRs). Best-path sign misled for EGFR (via PTPN1) -> consensus sign added. Pending: compare --min-score 0.3 and set default. Note: SIGNOR entity 'PDK1' = pyruvate dehydrogenase kinase, not PDPK1
 - SIGNOR complexes / protein families: expand to member proteins (currently dropped by load_signor); membership available offline-free via OmniPath `complexes?resources=SIGNOR`
 - Chaperone/client edge layer (Taipale 2012, Picard list) beyond SIGNOR
 - Cross-talk baseline: same target vs several unrelated core genes

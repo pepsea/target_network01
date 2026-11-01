@@ -57,7 +57,9 @@ DoRothEA regulons via OmniPath, UniProt receptor list / locations, STRING physic
 | downstream & crosstalk: `--regulon dorothea\|collectri --conf ABC --regulon-file F --max-targets N` | regulon source and confidence | dorothea ABC |
 
 ## How each mode works
-**Signed walk.** Best-path search from the core gene over states (node, sign). Edge weight: SIGNOR 0.9, Reactome 0.7,
+**Signed walk.** Node set and `score` from a best-path search; `sign` is the **consensus over all walks** up to max depth
+(two-state activating/inhibiting influence propagation; `influence` = total, `sign_confidence` = |act−inh|/total; the single best path's
+sign is kept as `sign_bestpath`). Best-path search from the core gene over states (node, sign). Edge weight: SIGNOR 0.9, Reactome 0.7,
 both 0.95; each node multiplies by a hub penalty. Sign = product of edge effects (+1 activation, −1 inhibition); a node
 whose best positive and best negative paths are within 20 % of each other is *mixed*. The walk never expands past an
 endpoint, past `--max-depth`, or below `--min-score`.

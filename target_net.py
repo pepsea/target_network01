@@ -24,7 +24,8 @@ from targetnet import config as Cf
 # symbols people type that have no signaling edges; map to the functional gene and say why
 SYMBOL_NOTES = {"HSP90AA2": ("HSP90AA1", "HSP90AA2 is the pseudogene HSP90AA2P (UniProt Q14568, putative); its peptides are shared with HSP90AA1"),
                 "HSP90AA2P": ("HSP90AA1", "pseudogene of HSP90AA1"), "HSP90A": ("HSP90AA1", "old alias"), "HSP90B": ("HSP90AB1", "old alias"),
-                "AKT": ("AKT1", "family name"), "ERK2": ("MAPK1", "alias"), "ERK1": ("MAPK3", "alias"), "MEK1": ("MAP2K1", "alias"), "P53": ("TP53", "alias")}
+                "AKT": ("AKT1", "family name"),
+                "PDK1_NOTE": ("PDK1", "in SIGNOR tables 'PDK1' is pyruvate dehydrogenase kinase 1, NOT PDPK1 (3-phosphoinositide-dependent kinase)"), "ERK2": ("MAPK1", "alias"), "ERK1": ("MAPK3", "alias"), "MEK1": ("MAP2K1", "alias"), "P53": ("TP53", "alias")}
 
 def resolve_symbol(g):
     g = g.upper()
@@ -133,7 +134,7 @@ def run_upstream(args):
     write_html("cell_map.html", "/*__NETWORK_JSON__*/", cell_map_payload(gene, df, G, comp, "upstream", und), os.path.join(out, "cell_map.html"))
     print(f"\n[upstream] {len(df)} nodes, {len(rec)} receptors -> {out}/")
     return df
-    print(rec.head(12)[["node", "hops", "score", "sign", "coessentiality_r", "best_path"]].to_string(index=False))
+    print(rec.head(12)[["node", "hops", "score", "influence", "sign", "sign_confidence", "best_path"]].to_string(index=False))
 
 
 # ----------------------------------------------------------------------------- mode: downstream
@@ -162,7 +163,7 @@ def run_downstream(args, gene=None, quiet=False, exclude=(), G=None, und=None):
     write_html("cell_map.html", "/*__NETWORK_JSON__*/", cell_map_payload(gene, df, G, comp, "downstream", und), os.path.join(out, "cell_map.html"))
     if not quiet:
         print(f"\n[downstream] {len(df)} nodes, {len(tf_df)} TFs, {genes.gene.nunique() if len(genes) else 0} genes -> {out}/")
-        print(tf_df.head(12)[["node", "hops", "score", "sign", "best_path"]].to_string(index=False))
+        print(tf_df.head(12)[["node", "hops", "score", "influence", "sign", "sign_confidence", "best_path"]].to_string(index=False))
     return G, df, genes
 
 
