@@ -47,7 +47,7 @@ CAPTIONS = {
   "       Line thickness ∝ edge confidence (SIGNOR score). Only edges among drawn nodes are shown; the walk itself used the whole graph.",
   "NODES  black diamond = the analysed gene (seed) · blue = endpoint (receptor in upstream view, transcription factor in downstream view) · grey = intermediate.",
   "       Fill saturation ∝ path score. Outline: green = seed activates this node (consensus over all paths), red = inhibits, grey dashed = mixed; long dashes = feedback node (also upstream of the seed).",
-  "COLUMNS hop N = shortest number of edges from the seed; endpoints are collected in the last column(s): upstream = receptors, then their secreted ligands (teal; UniProt Secreted + Cytokine/Growth factor/Hormone); downstream = TFs. Right-hand boxes: DoRothEA target genes per TF (↑ induced, ↓ repressed by the seed); hover to list them.",
+  "COLUMNS hop N = shortest number of edges from the seed; hop 1 = every direct neighbour (always kept, whatever its score); endpoints are collected in the last column(s): upstream = receptors, then their secreted ligands (teal; UniProt Secreted + Cytokine/Growth factor/Hormone); downstream = TFs. Right-hand boxes: DoRothEA target genes per TF (↑ induced, ↓ repressed by the seed); hover to list them.",
   "FOCUS  with a focus list: focus genes are orange with bold dark-orange labels (blue→red fill instead when a value such as log2FC is supplied); all other nodes small grey; edges not touching a focus gene are lighter."],
  "cell_map": [
   "LINES  dark grey curve with ▶ (activation) or ┃ (inhibition) = signaling edge; dotted light grey straight line = physical contact only (STRING / Reactome undirected), no direction or sign.",
@@ -140,7 +140,9 @@ def _cap_nodes(nodes, edges, max_nodes, keep_ids=()):
     best remaining nodes up to max_nodes; drop edges to removed nodes."""
     if len(nodes) <= max_nodes: return nodes, edges, False
     byid = {n["id"]: n for n in nodes}
-    keep = {n["id"] for n in nodes if n.get("cls") == "seed" or n["id"] in keep_ids}
+    # never drop the seed, the focus genes, or any direct neighbour of a seed (hop 1 on either side)
+    hop1 = lambda n: 1 in (n.get("hops"), n.get("hops_c"), n.get("hops_x"))
+    keep = {n["id"] for n in nodes if n.get("cls") == "seed" or n["id"] in keep_ids or hop1(n)}
     ends = sorted([n for n in nodes if n.get("is_endpoint")], key=lambda n: -n.get("score", 0))
     for n in ends:                                   # whole best path of each endpoint, best endpoints first
         path = [p.strip() for p in str(n.get("best_path", "")).split(">")]

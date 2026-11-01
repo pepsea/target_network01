@@ -54,6 +54,7 @@ def signed_walk(G, seed, endpoints, direction="down", max_depth=6, min_score=0.1
     """
     Returns DataFrame: node, hops, score, sign(+1/-1/0 mixed), ambiguous(bool), is_endpoint, best_path (list)
     direction 'down' follows edges src->dst; 'up' follows them backwards (src is the upstream regulator).
+    All direct neighbours of the seed (hop 1) are always included, whatever their score; min_score gates expansion beyond them.
     extend_to: nodes an endpoint may still step into (upstream: receptors -> their ligands); those are endpoints too, so the walk ends there.
     """
     extend_to = extend_to or set()
@@ -77,7 +78,9 @@ def signed_walk(G, seed, endpoints, direction="down", max_depth=6, min_score=0.1
             if at_end and m not in extend_to: continue                      # ... except receptor -> ligand
             e = edge(n, m)
             ns = score * e["weight"] * pen.get(m, 1.0)
-            if ns < min_score and not at_end: continue                        # the ligand step is annotation of a reached receptor: not score-gated
+            # direct neighbours of the seed (hop 1) and the receptor -> ligand step are never score-gated:
+            # they are reported even when weak, but a weak hop-1 node is not expanded further (its children fall below min_score)
+            if ns < min_score and not (at_end or n == seed): continue
             eff = e["effect"]; amb = best[(n, sgn)][3] or eff == 0
             nsgn = sgn * (eff if eff != 0 else 1)
             key = (m, nsgn)
