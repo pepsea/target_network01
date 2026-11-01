@@ -72,6 +72,14 @@ def signed_walk(G, seed, endpoints, direction="down", max_depth=6, min_score=0.1
         rows.append(dict(node=n, hops=hp, score=round(sc, 4), sign=0 if mixed else sg, ambiguous=amb or mixed,
                          is_endpoint=n in endpoints, best_path=" > ".join(path if direction == "down" else path[::-1])))
     df = pd.DataFrame(rows)
+    if not len(df):
+        # nothing reached: report why instead of failing downstream (empty frame keeps the full column set)
+        first = [(m, round(edge(seed, m)["weight"] * pen.get(m, 1.0), 3)) for m in nbrs(seed)]
+        first.sort(key=lambda t: -t[1])
+        print(f"[walk] {seed} ({direction}): 0 nodes reached. {len(first)} direct neighbours in this direction; "
+              + (f"best first-hop score {first[0][1]} ({first[0][0]}) < min_score {min_score} -> lower min_score or hub_penalty"
+                 if first else "the seed has no edges in this direction in the loaded graph (or they were removed)"))
+        return pd.DataFrame(columns=["node", "hops", "score", "influence", "sign", "sign_confidence", "sign_bestpath", "ambiguous", "is_endpoint", "best_path"])
     if len(df):
         inf = signed_influence(G, seed, [seed] + list(df.node), direction, max_depth, hub_strength)
         df = df.rename(columns={"sign": "sign_bestpath"}).merge(inf, on="node", how="left")

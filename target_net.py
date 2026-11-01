@@ -127,11 +127,26 @@ def cell_map_payload(gene, df, G, comp, mode, und):
 
 
 # ----------------------------------------------------------------------------- mode: upstream
+def _stop_if_empty(df, gene, direction, args, exclude=()):
+    """A walk that reaches nothing cannot be annotated or drawn: stop with the reason and what to change."""
+    if len(df): return
+    msg = (f"{gene} reaches no node {direction} within max_depth {args.max_depth} at min_score {args.min_score}"
+           + (f" once {', '.join(exclude)} is removed from the graph" if exclude else "") + ".\n"
+           "  Likely causes: the seed has few outgoing edges in SIGNOR (check it is the intended symbol / not a complex member), "
+           "or its only neighbours are hubs whose penalty pushes the first hop below min_score.\n"
+           "  Try: --min-score 0.2 (or crosstalk: min_score in target_net.yaml), --hub-penalty 0.1, a larger --max-depth; "
+           "run `python target_net.py downstream --gene " + gene + "` alone to see how far it gets."
+           + (f"\n  If {gene} reaches TFs only through {', '.join(exclude)}, that dependency is itself the cross-talk result: "
+              f"{gene}'s whole downstream output passes through {', '.join(exclude)}." if exclude else ""))
+    print("[walk] " + msg); raise SystemExit(msg)
+
+
 def run_upstream(args):
     gene = resolve_symbol(args.gene); out = os.path.join(run_dir(args, f"upstream_{gene}"), "upstream"); os.makedirs(out, exist_ok=True)
     G, und = build_signaling(args)
     receptors = D.load_receptors(args.demo)
     df = Wk.signed_walk(G, gene, receptors, direction="up", max_depth=args.max_depth, min_score=args.min_score, hub_strength=args.hub_penalty)
+    _stop_if_empty(df, gene, "upstream", args)
     df, comp = annotate(df, G, gene, args, und)
     df.to_csv(os.path.join(out, "upstream_nodes.csv"), index=False)
     rec = df[df.is_endpoint].sort_values("score", ascending=False)
@@ -158,6 +173,7 @@ def run_downstream(args, gene=None, quiet=False, exclude=(), G=None, und=None):
         G = G.copy(); G.remove_nodes_from([e for e in exclude if e in G])
     tfs = D.load_tfs(args.demo)
     df = Wk.signed_walk(G, gene, tfs, direction="down", max_depth=args.max_depth, min_score=args.min_score, hub_strength=args.hub_penalty)
+    _stop_if_empty(df, gene, "downstream", args, exclude)
     regulon = D.load_regulon(args.regulon, args.conf, args.regulon_file, args.demo)
     genes = Wk.extend_regulon(df, regulon, tfs, args.max_targets)
     df, comp = annotate(df, G, gene, args, und)
