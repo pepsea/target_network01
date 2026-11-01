@@ -8,6 +8,7 @@ Network-based drug-target research around a core gene. Entry points: `target_net
 - `targetnet/data.py`    loaders (SIGNOR, Reactome FI, STRING, UniProt, Lambert TFs, DoRothEA/OmniPath, DepMap, HPA) + curated demo data
 - `targetnet/walk.py`    signed best-path walk (node set, score) + signed influence propagation (consensus sign, influence); regulon extension; cross-talk logic
 - `targetnet/screen.py`  cross-talk screen: one core gene vs a list of targets -> interference score, TF enrichment, dependency, direction, degree-matched random baseline, composite rank (notebooks/crosstalk_screen.ipynb, CLI crosstalk-screen)
+- `targetnet/interference.py` pathway interference: CORE network + 'TARGET inhibited' perturbation (entry edges from TARGET's side, propagated along CORE's signed edges) -> flow_change per node / gene (notebooks/pathway_interference.ipynb, CLI pathway-interference, plots.cell_flow_figure = cell cross-section layout)
 - `targetnet/plots.py`   the four views as Plotly figures (notebook inline AND the .html files in run folders; built from the .json next to each view)
 - `targetnet/templates/` original D3 pages, written only with --d3 as <view>_d3.html
 - `fetch_depmap.py`      DepMap downloader (portal API, Figshare fallback)
@@ -21,7 +22,7 @@ Network-based drug-target research around a core gene. Entry points: `target_net
 - Plots: flat, muted colours, white background, English labels.
 
 ## Test
-`for m in "upstream --gene AKT1" "downstream --gene AKT1" "sl --gene AKT1" "crosstalk --causal FGFR3 --goi HSP90AA2" "crosstalk-screen --causal FGFR3 --goi-list AKT1,MAPK1,HSP90AA2 --n-random 5"; do python target_net.py $m --demo; done`
+`for m in "upstream --gene AKT1" "downstream --gene AKT1" "sl --gene AKT1" "crosstalk --causal FGFR3 --goi HSP90AA2" "crosstalk-screen --causal FGFR3 --goi-list AKT1,MAPK1,HSP90AA2 --n-random 5" "pathway-interference --causal FGFR3 --goi MAPK1"; do python target_net.py $m --demo; done`
 Notebooks: `jupyter nbconvert --to notebook --execute notebooks/gene_research.ipynb --output /tmp/t.ipynb`
 Expected textbook recovery: AKT1 upstream -> RTKs via PI3K/PDPK1; MAPK1 x AKT1 -> RSK->GSK3B S9, ERK-|SOS1 feedback.
 
@@ -37,4 +38,5 @@ Expected textbook recovery: AKT1 upstream -> RTKs via PI3K/PDPK1; MAPK1 x AKT1 -
 - Impact view (2026-11-01): crosstalk writes impact.csv + core_impact.html = C's flow recoloured by X's effect (direct / shared / indirect / none; fill = X's sign, outline = agreement); walk.impact_on_core
 - Chaperone/client edge layer (Taipale 2012, Picard list) beyond SIGNOR. Live FGFR3 x HSP90AA1 (2026-11-01): no HSP90AA1->FGFR3 edge in SIGNOR/OmniPath-gaps although FGFR3 is a known HSP90 client -> added (a) OmniPath edges incident to the analysed genes always taken in mode=gaps, (b) omnipath.signed_only (unsigned directed records flooded FGFR3's hop 1), (c) crosstalk physical_contacts.csv + dotted blue lines (STRING/Reactome contact without signed edge)
 - Cross-talk: live AKT1 x ACVR1B gave index 1.0 / 2,265 nodes (hub saturation) -> local walks (depth 3, min_score 0.3), hypergeometric TF-overlap enrichment, confidence-gated agreement, proximity-ranked edges. Automatic baseline now exists in the screen (degree-matched random targets vs the same core, baseline_z); the single-pair notebook still has none
+- Pathway interference (2026-11-01): third analysis, see interference.py; demo FGFR3 vs MAPK1 inhibited -> STAT3 down, SOS1/GRB2/GAB1/FRS2/RAF1 up (feedback release). Propagation is linear signed influence restricted to the CORE network (no saturation / logic) -> the Boolean simulation item would refine it
 - Boolean/logic simulation of the signed graph

@@ -9,6 +9,7 @@ python target_net.py downstream --gene AKT1               # 1-2  core gene -> TF
 python target_net.py sl         --gene AKT1 --depmap DIR  # 1-3  synthetic lethality with core-gene loss
 python target_net.py crosstalk  --causal AKT1 --goi MAPK1 # 2    does gene X influence the pathway of causal gene C?
 python target_net.py crosstalk-screen --causal AKT1 --goi-list targets.txt   # 2b  rank a list of candidate targets by cross-talk with C
+python target_net.py pathway-interference --causal FGFR3 --goi MAPK1          # 3   C's network as a cell cross-section + predicted change when X is inhibited
 ```
 Add `--demo` to any command for an offline smoke test on a curated AKT1 / MAPK1 axis (no internet needed;
 the DepMap part of the demo is **simulated** and labelled as such).

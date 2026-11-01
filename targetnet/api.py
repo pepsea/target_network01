@@ -183,6 +183,8 @@ def figure(view_path, focus=None, **kw):
     kind = os.path.basename(jp)
     if kind.startswith("hop1"):
         kw.setdefault("max_nodes", 10**6); kw.setdefault("sub_max", 6); return plots.flow_figure(jp, **kw)
+    if kind.startswith("cell_flow"):
+        return plots.cell_flow_figure(jp, **kw)
     fn = plots.flow_figure if kind.startswith(("flow", "core_impact")) else plots.cell_map_figure if kind.startswith("cell_map") else \
          plots.crosstalk_figure if kind.startswith("crosstalk") else plots.volcano_figure
     if fn is plots.volcano_figure: kw.pop("focus", None)
@@ -201,6 +203,37 @@ def show(html_path, height=650):
     if not os.path.exists(html_path):
         print(f"(no view at {html_path})"); return
     display(IFrame(src=os.path.relpath(html_path), width="100%", height=height))
+
+
+def research_pathway_interference(core, target, **options):
+    """
+    CORE (usually a receptor) -> full downstream network to TFs and genes, drawn as a cell cross-section; then the predicted change of
+    that network when TARGET is inhibited (entry edges from TARGET's side, propagated along CORE's own edges).
+    Returns dict(core, target, run_dir, summary, flow_change (nodes), flow_change_genes, entry_edges, core_nodes, core_tfs, target_genes,
+                 views={cell_flow, cell_flow_inhibition, core_flow, core_hop1}).
+    """
+    a = _args(**options); cli.apply_config(a); a.causal = core; a.goi = target
+    cli.run_pathway_interference(a)
+    root = a.run_dir; out = f"{root}/interference"
+    return dict(core=cli.resolve_symbol(core), target=cli.resolve_symbol(target), run_dir=root, summary=json.load(open(f"{out}/summary.json")),
+                flow_change=_read(f"{out}/flow_change.csv"), flow_change_genes=_read(f"{out}/flow_change_genes.csv"), entry_edges=_read(f"{out}/entry_edges.csv"),
+                core_nodes=_read(f"{root}/downstream/downstream_nodes.csv"), core_tfs=_read(f"{root}/downstream/transcription_factors.csv"),
+                target_genes=_read(f"{root}/downstream/target_genes.csv"),
+                views=dict(cell_flow=f"{out}/cell_flow.html", cell_flow_inhibition=f"{out}/cell_flow_inhibition.html",
+                           core_flow=f"{root}/downstream/flow.html", core_hop1=f"{root}/downstream/hop1.html"))
+
+
+def summarize_pathway_interference(p, n=12):
+    s = p["summary"]; fc = p["flow_change"]
+    lines = [f"== {p['core']} network, {p['target']} inhibited ==",
+             f"CORE network: {s['core_nodes']} nodes, {s['core_tfs']} TFs; {p['target']} {'is on the network' if s['target_in_core_network'] else 'acts from outside'}",
+             f"entry: {s['entry_points']} nodes receive {s['entry_edges']} edges from {p['target']}'s side",
+             f"change: {s['nodes_changed']} nodes ({s['nodes_decreased']} down / {s['nodes_increased']} up); TFs {s['tfs_changed']}/{s['core_tfs']} "
+             f"({s['tfs_decreased']} down / {s['tfs_increased']} up); genes {s['genes_down']} down / {s['genes_up']} up; flow-change index {s['flow_change_index']}"]
+    if len(fc):
+        tf = fc[(fc.is_tf) & (fc.direction != "unchanged")].head(n)
+        if len(tf): lines.append("TFs most changed: " + ", ".join(f"{r.node}({'↓' if r.delta < 0 else '↑'}{abs(r.delta):.2f})" for r in tf.itertuples()))
+    return "\n".join(lines)
 
 
 def screen_crosstalk(core, targets, **options):

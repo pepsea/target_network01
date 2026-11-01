@@ -41,6 +41,15 @@ def _base(title, w=1000, h=650):
 
 
 CAPTIONS = {
+ "cell_flow": [
+  "LAYOUT  cell cross-section of the CORE network: secreted ligands (top), membrane proteins (hop ≤ 1), cytosolic intermediates (row = hop from CORE), nucleus = transcription factors and nuclear proteins (bottom).",
+  "LINES   thin grey curve = signaling edge (▶ activation, ┃ inhibition, dotted = unknown sign). NODES black diamond = CORE · blue = TF · grey = intermediate; outline green = activated by CORE, red = inhibited.",
+  "GENES   count under each TF = DoRothEA target genes (↑ induced / ↓ repressed by CORE); hover for the list. Per-hop node cap applies (view: max_nodes); tables hold everything."],
+ "cell_flow_pert": [
+  "PERTURBATION  the same CORE network, coloured by the predicted change when the TARGET is INHIBITED: blue = activity decreases, red = increases, grey = unchanged; size ∝ |delta|; black outline = direct entry point.",
+  "ENTRY   orange nodes in the left margin = TARGET (diamond) and the TARGET-side nodes that act on the CORE network; their straight edges are blue (receiving node decreases) or red (increases). Hover an edge midpoint for mechanism / residue.",
+  "FLOW    the change then propagates along CORE's own signed edges (multiplying effects and weights), so a node far from any entry point can still be coloured. Under each TF: how many DoRothEA genes go down/up. Tables: flow_change.csv, flow_change_genes.csv, entry_edges.csv.",
+  "CAVEAT  magnitudes are relative within one run (no units) and assume the databases' context-free edges; signs at entry points are the trustworthy part."],
  "impact": [
   "IMPACT VIEW  the core gene's own downstream pathway (walked with the target gene removed), recoloured by what the target gene does to each node.",
   "NODES  green = target activates this node directly (interference edge into it), red = inhibits directly, dark grey = mixed; purple = shared (target's own pathway also reaches it);",
@@ -455,6 +464,153 @@ def cell_map_figure(json_path, width=900, height=700, max_nodes=None, focus=None
     fig.update_xaxes(range=[-8, 108], scaleanchor="y"); fig.update_yaxes(range=[-2, 102])
     _edge_legend(fig, ("act", "inh", "amb", "phys"))
     if caption: add_caption(fig, "cell_map")
+    return fig
+
+
+# --------------------------------------------------------------------------- cell flow (receptor at the top, nucleus at the bottom)
+_BANDS = [("extracellular", 97, 93), ("membrane", 90, 84), ("cytosol", 80, 30), ("nucleus", 24, 4)]   # name, y_top, y_bottom
+
+
+def _band_of(n):
+    c = n.get("compartment", "cytosol")
+    if c == "extracellular": return "extracellular"
+    if c == "membrane" and n.get("hops", 0) <= 1: return "membrane"
+    if c == "nucleus" or n.get("is_endpoint"): return "nucleus"
+    return "cytosol"
+
+
+def cell_flow_figure(json_path, width=1100, height=820, max_nodes=None, focus=None, caption=True):
+    """
+    The CORE gene's downstream network drawn as a cell cross-section: secreted ligands / membrane at the top, cytosolic
+    intermediates in the middle (row = hop from CORE), nucleus (TFs and nuclear proteins) at the bottom; DoRothEA gene
+    counts under each TF. With a `perturbation` block in the json (pathway-interference run) nodes are coloured by the
+    predicted change when the TARGET is inhibited (blue = decreased, red = increased, grey = unchanged; size = |delta|),
+    the TARGET-side entry nodes stand in a left margin and their entry edges are drawn in the change colour.
+    """
+    F = _load(json_path)
+    if max_nodes is None: max_nodes = _view_cfg("max_nodes", 150)
+    fset, fvals = parse_focus(focus); fset_or_none = fset if focus is not None else None
+    pert = F.get("perturbation")
+    keep_ids = set(pert["nodes"].keys()) & {n["id"] for n in F["nodes"]} if pert else set()
+    keep_ids = {k for k in keep_ids if pert["nodes"][k]["entry"] == "direct"}          # direct entry points always drawn
+    nodes, edges, capped = _cap_nodes(F["nodes"], F["edges"], max_nodes, keep_ids=keep_ids, per_hop=True)
+    byid = {n["id"]: n for n in nodes}
+    # ---- layout: band by compartment, row by hop inside the band, x by barycenter of predecessors
+    for n in nodes: n["_band"] = "seed" if n["cls"] == "seed" else _band_of(n)
+    seed = next(n for n in nodes if n["cls"] == "seed")
+    seed_band = _band_of(dict(seed, hops=0))
+    pos = {}
+    X0, X1 = 14, 98                                                    # left margin (0-12) is reserved for TARGET-side entry nodes
+    rows = defaultdict(list)
+    for n in nodes:
+        if n is seed: continue
+        rows[(n["_band"], n.get("hops", 1))].append(n)
+    def band_y(band, hop, hops_in_band):
+        _, yt, yb = next(b for b in _BANDS if b[0] == band)
+        if len(hops_in_band) <= 1: return (yt + yb) / 2
+        i = hops_in_band.index(hop)
+        return yt - (yt - yb) * (i + 0.5) / len(hops_in_band)
+    hops_by_band = defaultdict(list)
+    for (band, hp) in rows: hops_by_band[band].append(hp)
+    for b in hops_by_band: hops_by_band[b].sort()
+    # seed first
+    sy = {"extracellular": 95, "membrane": 87, "cytosol": 78, "nucleus": 20}[seed_band]
+    pos[seed["id"]] = ((X0 + X1) / 2, sy)
+    order = sorted(rows.keys(), key=lambda k: (k[1], ["extracellular", "membrane", "cytosol", "nucleus"].index(k[0])))
+    for (band, hp) in order:
+        arr = rows[(band, hp)]
+        for n in arr:
+            prev = [pos[e["source"]][0] for e in edges if e["target"] == n["id"] and e["source"] in pos]
+            n["_bc"] = sum(prev) / len(prev) if prev else (X0 + X1) / 2
+        arr.sort(key=lambda n: (n["_bc"], -n.get("score", 0)))
+        y = band_y(band, hp, hops_by_band[band])
+        per_row = max(1, math.ceil(len(arr) / math.ceil(len(arr) / 14)))     # at most ~14 names per line, extra lines stacked below
+        nlines = math.ceil(len(arr) / per_row)
+        for i, n in enumerate(arr):
+            line, k = divmod(i, per_row); cnt = min(per_row, len(arr) - line * per_row)
+            x = X0 + (X1 - X0) * (k + 0.5) / cnt
+            pos[n["id"]] = (x, y - line * 3.2)
+    rad = lambda nid: 2.0 if byid[nid]["cls"] == "seed" else 0.9 + 1.3 * byid[nid].get("score", 0.5)
+    title = f"{F['seed']} network as a cell cross-section — {F.get('subtitle', '')}"
+    if pert: title = f"predicted change of the {F['seed']} network when {pert['target']} is inhibited — {pert['summary'].get('tfs_changed', 0)}/{pert['summary'].get('core_tfs', 0)} TFs change ({pert['summary'].get('tfs_decreased', 0)} down, {pert['summary'].get('tfs_increased', 0)} up)"
+    fig = _base(title, width, height)
+    for name, yt, yb in _BANDS:
+        fig.add_shape(type="rect", x0=0, x1=100, y0=yb - 1.5, y1=yt + 1.5, line=dict(width=0), fillcolor="#f4f6f8" if name in ("membrane", "nucleus") else "#ffffff", layer="below")
+        fig.add_annotation(x=99.5, y=(yt + yb) / 2, text=name, showarrow=False, font=dict(size=10, color="#999"), xanchor="right", textangle=-90 if name == "cytosol" else 0)
+    fig.add_shape(type="line", x0=0, x1=100, y0=91.5, y1=91.5, line=dict(color="#c8c8c8", width=1, dash="dot"))   # membrane line
+    fig.add_shape(type="line", x0=0, x1=100, y0=25.5, y1=25.5, line=dict(color="#c8c8c8", width=1, dash="dot"))   # nuclear envelope
+    _edge_traces(fig, edges, pos, rad, color_fn=_focus_edge_style(fset_or_none))
+    hover = lambda n: (f"<b>{n['id']}</b><br>{n.get('compartment', '')} · hops {n.get('hops', 0)} · path score {n.get('score', 0):.2f}<br>CORE effect: "
+                       f"{'activates' if n.get('sign') == 1 else 'inhibits' if n.get('sign') == -1 else 'mixed'}" + ("<br>TF" if n.get("is_endpoint") else "")
+                       + f"<br>{n.get('best_path', '')}")
+    outline = lambda n: COL["syn"] if n.get("sign") == 1 else COL["ant"] if n.get("sign") == -1 else COL["mix"]
+    if not pert:
+        fk = dict(focus=fset_or_none, values=fvals)
+        _node_trace(fig, [seed], pos, rad, lambda n: COL["seed"], lambda n: "#111", hover, "seed (CORE)", **fk)
+        _node_trace(fig, [n for n in nodes if n is not seed and n.get("is_endpoint")], pos, rad, lambda n: COL["endpoint"], outline, hover, "TF; outline green = activated by CORE, red = inhibited", line_w=2.0, label_size=9, **fk)
+        _node_trace(fig, [n for n in nodes if n is not seed and not n.get("is_endpoint")], pos, rad, lambda n: COL["node"], outline, hover, "intermediate", line_w=2.0, label_size=9, **fk)
+    else:
+        P = pert["nodes"]; vmax = max([abs(v["delta"]) for v in P.values()] or [1.0]) or 1.0
+        pcol = lambda n: _value_colour(P.get(n["id"], {}).get("delta", 0.0), vmax) if abs(P.get(n["id"], {}).get("delta", 0.0)) > 1e-4 else "#e6e6e6"
+        prad = lambda nid: 2.0 if byid[nid]["cls"] == "seed" else 0.9 + 1.6 * min(1.0, abs(P.get(nid, {}).get("delta", 0.0)) / vmax)
+        def phover(n):
+            d = P.get(n["id"]); base = hover(n)
+            if not d or abs(d["delta"]) < 1e-4: return base + f"<br><b>unchanged by {pert['target']} inhibition</b>"
+            return base + (f"<br><b>{d['direction'].upper()} when {pert['target']} is inhibited</b> (delta {d['delta']:+.3f}; {d['entry']}"
+                           + (f", via {d['via']}" if d.get("via") else "") + ")")
+        pline = lambda n: "#111" if P.get(n["id"], {}).get("entry") == "direct" else ("#555" if n.get("is_endpoint") else "#aaa")
+        _node_trace(fig, [seed], pos, prad, lambda n: COL["seed"] if abs(P.get(n["id"], {}).get("delta", 0.0)) < 1e-4 else pcol(n), lambda n: "#111", phover, "CORE")
+        _node_trace(fig, [n for n in nodes if n is not seed], pos, prad, pcol, pline, phover,
+                    f"CORE-network node: blue = decreased, red = increased when {pert['target']} is inhibited, grey = unchanged; black outline = direct entry point; size = |delta|", line_w=1.6, label_size=9)
+        # TARGET-side entry nodes in the left margin, at the height of their first target; entry edges in the change colour
+        ent = [e for e in pert["edges"] if e["to_node"] in pos]
+        srcs = sorted({e["from_node"] for e in ent}, key=lambda u: -max(abs(e["entry_strength"]) for e in ent if e["from_node"] == u))
+        ys = {u: pos[next(e for e in ent if e["from_node"] == u)["to_node"]][1] for u in srcs}
+        used = []
+        for u in srcs:
+            y = ys[u]
+            while any(abs(y - v) < 3.2 for v in used): y -= 3.2
+            used.append(y); pos[u] = (6, y)
+        if srcs:
+            fig.add_trace(go.Scatter(x=[pos[u][0] for u in srcs], y=[pos[u][1] for u in srcs], mode="markers+text",
+                                     text=[f"<b>{u}</b>" if u == pert["target"] else u for u in srcs], textposition="middle left", textfont=dict(size=9, color="#9A4B00"),
+                                     marker=dict(size=[13 if u == pert["target"] else 9 for u in srcs], symbol=["diamond" if u == pert["target"] else "circle" for u in srcs],
+                                                 color="#E8862E", line=dict(color="#9A4B00", width=1.5)),
+                                     hovertext=[f"<b>{u}</b> — TARGET side (TARGET {'itself' if u == pert['target'] else 'reaches it'}); acts on: " +
+                                                ", ".join(sorted({e['to_node'] for e in ent if e['from_node'] == u})) for u in srcs],
+                                     hoverinfo="text", name=f"{pert['target']} side: entry nodes (orange)", showlegend=True))
+            # entry edges: straight lines coloured by the effect of inhibition on the receiving node
+            for colr, lab, sgn in [("#3a6fb0", "entry edge: receiving node decreases", -1), ("#c0392b", "entry edge: receiving node increases", 1)]:
+                xs, ys2 = [], []
+                for e in ent:
+                    if e["effect_of_target_inhibition_on_to"] != sgn: continue
+                    xs += [pos[e["from_node"]][0], pos[e["to_node"]][0], None]; ys2 += [pos[e["from_node"]][1], pos[e["to_node"]][1], None]
+                if xs: fig.add_trace(go.Scatter(x=xs, y=ys2, mode="lines", line=dict(color=colr, width=1.3), opacity=0.8, hoverinfo="skip", name=lab))
+            mx = [(pos[e["from_node"]][0] + pos[e["to_node"]][0]) / 2 for e in ent]; my = [(pos[e["from_node"]][1] + pos[e["to_node"]][1]) / 2 for e in ent]
+            fig.add_trace(go.Scatter(x=mx, y=my, mode="markers", marker=dict(size=5, color=["#3a6fb0" if e["effect_of_target_inhibition_on_to"] < 0 else "#c0392b" for e in ent]),
+                                     hoverinfo="text", showlegend=False,
+                                     hovertext=[f"{e['from_node']} → {e['to_node']}: {e['mechanism']} {e['residue']}<br>TARGET→{e['from_node']} sign {e['sign_target_to_from']:+d}, edge effect {e['edge_effect']:+d}"
+                                                f"<br>inhibiting {pert['target']} ⇒ {e['to_node']} {'decreases' if e['effect_of_target_inhibition_on_to'] < 0 else 'increases'} (entry {e['entry_strength']:+.3f})" for e in ent]))
+    # DoRothEA counts under TFs
+    if F.get("genes"):
+        per = defaultdict(list)
+        for g in F["genes"]:
+            if g["tf"] in pos: per[g["tf"]].append(g)
+        gd = pert["genes"] if pert else {}
+        xs, ys3, txt, hv = [], [], [], []
+        for tf, gs in per.items():
+            up = sum(g["sign"] == 1 for g in gs); dn = sum(g["sign"] == -1 for g in gs)
+            if pert:
+                d_dn = sum(1 for g in gs if gd.get(g["gene"], 0) < 0); d_up = sum(1 for g in gs if gd.get(g["gene"], 0) > 0)
+                txt.append(f"{len(gs)} genes: {d_dn}↓ {d_up}↑ on inhibition")
+            else:
+                txt.append(f"{len(gs)} genes ↑{up} ↓{dn}")
+            xs.append(pos[tf][0]); ys3.append(pos[tf][1] - 2.0)
+            hv.append(f"<b>{tf} target genes</b><br>" + "<br>".join(f"{g['gene']} {'↑' if g['sign'] == 1 else '↓'}" + (f" → {'down' if gd.get(g['gene'], 0) < 0 else 'up' if gd.get(g['gene'], 0) > 0 else 'unchanged'} on inhibition" if pert else "") for g in gs[:30]))
+        fig.add_trace(go.Scatter(x=xs, y=ys3, mode="text", text=txt, textposition="bottom center", textfont=dict(size=8, color="#555"), hovertext=hv, hoverinfo="text", name="DoRothEA target genes (hover)", showlegend=True))
+    fig.update_xaxes(range=[-1, 101]); fig.update_yaxes(range=[0, 100])
+    _edge_legend(fig, ("act", "inh", "amb"))
+    if caption: add_caption(fig, "cell_flow_pert" if pert else "cell_flow")
     return fig
 
 

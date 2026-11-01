@@ -16,6 +16,7 @@ The analysis is done by the `target_net` package (this folder's parent contains 
 |---|---|---|---|
 | **one gene** (candidate / target) | upstream → receptors; downstream → TFs → target genes; synthetic lethality (DepMap) | `notebooks/gene_research.ipynb` | `research_gene(GENE, config=...)` |
 | **two genes**: core (disease-causal) + target (gene of interest) | cross-talk: does TARGET influence the CORE pathway? | `notebooks/crosstalk_research.ipynb` | `research_crosstalk(core=CORE, target=TARGET, config=...)` |
+| **CORE (receptor / causal gene) + TARGET to inhibit**, asking how the CORE pathway's flow changes | pathway interference: CORE network drawn as a cell cross-section (membrane → cytosol → nucleus), then predicted change of every node / TF / gene when TARGET is inhibited | `notebooks/pathway_interference.ipynb` | `research_pathway_interference(CORE, TARGET, config=...)`; CLI `pathway-interference --causal C --goi X` |
 | **one core gene + a LIST of candidate targets** (panel, screen hits, proteomics list) | cross-talk screen: rank the candidates by interference with the CORE pathway (interference score, TF enrichment, dependency, direction, baseline vs random genes) | `notebooks/crosstalk_screen.ipynb` | `screen_crosstalk(CORE, TARGETS, config=...)`; CLI `crosstalk-screen --causal C --goi-list FILE` |
 
 If two genes are given and it is not clear which is the core gene, ask once. The analysis is asymmetric; do not guess.

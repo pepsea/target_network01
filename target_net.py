@@ -83,6 +83,8 @@ def write_html(tpl, token, payload, path, d3=False):
         kind = os.path.basename(jp)
         if kind.startswith("hop1"):
             fig = P.flow_figure(jp, max_nodes=10**6, sub_max=6)
+        elif kind.startswith("cell_flow"):
+            fig = P.cell_flow_figure(jp)
         else:
             fn = P.flow_figure if kind.startswith(("flow", "core_impact")) else P.cell_map_figure if kind.startswith("cell_map") else \
                  P.crosstalk_figure if kind.startswith("crosstalk") else P.volcano_figure
@@ -272,6 +274,48 @@ def run_crosstalk_screen(args):
         print(f"\n[screen] ranked {len(tab)} targets -> {out}/screen.csv")
         print(tab.head(15)[["rank", "target", "interference_score", "n_interference", "tf_enrichment", "tf_p", "dependency", "net_direction", "baseline_z", "composite"]].to_string(index=False))
     return tab
+
+
+# ----------------------------------------------------------------------------- mode: pathway interference (CORE network + TARGET inhibition)
+def run_pathway_interference(args):
+    """1) CORE's full downstream network (receptor -> TFs -> genes) as a cell cross-section;
+       2) how that flow changes when TARGET is inhibited (entry edges from TARGET's side, propagated inside the CORE network)."""
+    from targetnet import interference as I
+    C, X = resolve_symbol(args.causal), resolve_symbol(args.goi)
+    root = run_dir(args, f"pathway_{C}_vs_{X}"); out = os.path.join(root, "interference"); os.makedirs(out, exist_ok=True)
+    G, und = build_signaling(args)
+    # step 1: CORE network on the full graph (writes downstream/ with flow, cell_map, hop1, tables)
+    G, dC, gC = run_downstream(args, gene=C, quiet=True, G=G, und=und)
+    cell = json.load(open(os.path.join(root, "downstream", "flow.json")))
+    for n in cell["nodes"]: n.setdefault("compartment", "cytosol")
+    cell["subtitle"] = f"{len(dC)} nodes, {int(dC.is_endpoint.sum())} TFs within {args.max_depth} hops (min_score {args.min_score}); {gC.gene.nunique() if len(gC) else 0} DoRothEA genes"
+    write_html("flow.html", "/*__FLOW_JSON__*/", cell, os.path.join(out, "cell_flow.html"), d3=False)
+    # step 2: TARGET's reach (CORE removed, so only TARGET's own routes count) and the inhibition perturbation
+    tfs = D.load_tfs(args.demo)
+    H = G.copy(); H.remove_nodes_from([C] if C in H else [])
+    Wk.prepare_seed(H, X, "down", D.CFG, D.REACTOME_DIRECTED)
+    dX = Wk.signed_walk(H, X, tfs, direction="down", max_depth=args.max_depth, min_score=args.min_score, hub_strength=args.hub_penalty,
+                        stop_at_endpoints=not bool(D.CFG.get("walk", {}).get("through_tf", True))) if X in H else Wk.EMPTY_WALK.copy()
+    res = I.interference_flow(G, dC, C, X, dX, genes_df=gC, max_depth=args.max_depth, hub_strength=args.hub_penalty)
+    res["nodes"].to_csv(os.path.join(out, "flow_change.csv"), index=False)
+    res["edges"].to_csv(os.path.join(out, "entry_edges.csv"), index=False)
+    res["genes"].to_csv(os.path.join(out, "flow_change_genes.csv"), index=False)
+    json.dump(res["summary"], open(os.path.join(out, "summary.json"), "w"), indent=1)
+    pert = dict(target=X, summary=res["summary"],
+                nodes={r.node: dict(delta=float(r.delta), direction=r.direction, entry=r.entry, via=r.via) for r in res["nodes"].itertuples()},
+                genes={r.gene: float(r.delta) for r in res["genes"].itertuples()} if len(res["genes"]) else {},
+                edges=json.loads(res["edges"].to_json(orient="records")) if len(res["edges"]) else [])
+    cellp = dict(cell, perturbation=pert)
+    write_html("flow.html", "/*__FLOW_JSON__*/", cellp, os.path.join(out, "cell_flow_inhibition.html"), d3=False)
+    s_ = res["summary"]
+    print(f"\n[pathway] {C} network: {s_['core_nodes']} nodes, {s_['core_tfs']} TFs -> {root}/downstream/ and {out}/cell_flow.html")
+    print(f"[interference] inhibiting {X}: {s_['entry_points']} entry points ({s_['entry_edges']} edges from {X}'s side); "
+          f"{s_['nodes_changed']} nodes change ({s_['nodes_decreased']} down / {s_['nodes_increased']} up); TFs {s_['tfs_changed']}/{s_['core_tfs']} "
+          f"({s_['tfs_decreased']} down / {s_['tfs_increased']} up); genes {s_['genes_down']} down / {s_['genes_up']} up; flow-change index {s_['flow_change_index']}"
+          + (f"; {X} is itself on the {C} network" if s_['target_in_core_network'] else ""))
+    if len(res["nodes"]):
+        print(res["nodes"][res["nodes"].direction != "unchanged"].head(12)[["node", "hops_from_core", "is_tf", "delta", "direction", "entry", "via"]].to_string(index=False))
+    return res
 
 
 # ----------------------------------------------------------------------------- calibrate: node counts vs min_score (walk only)
@@ -515,6 +559,9 @@ def main():
     p = sub.add_parser("upstream"); p.add_argument("--gene", required=True); common(p)
     p = sub.add_parser("downstream"); p.add_argument("--gene", required=True); common(p); regulon_opts(p)
     p = sub.add_parser("sl"); p.add_argument("--gene", required=True); common(p)
+    p = sub.add_parser("pathway-interference", help="CORE network as a cell cross-section + predicted change when TARGET is inhibited")
+    p.add_argument("--causal", required=True, help="CORE gene (usually a receptor)"); p.add_argument("--goi", required=True, help="TARGET gene (to be inhibited)")
+    common(p); regulon_opts(p)
     p = sub.add_parser("calibrate", help="node / receptor / TF counts of the walk at several min_score and hub_penalty values (walk only, fast)")
     p.add_argument("--gene", required=True); p.add_argument("--scores", default="0.2,0.25,0.3,0.35,0.4,0.5"); p.add_argument("--hubs", default="0.25")
     common(p)
@@ -564,7 +611,7 @@ def main():
     apply_config(args)
     try:
         {"upstream": run_upstream, "downstream": run_downstream, "sl": run_sl, "crosstalk": run_crosstalk, "crosstalk-screen": run_crosstalk_screen,
-         "calibrate": run_calibrate}[args.mode](args)
+         "calibrate": run_calibrate, "pathway-interference": run_pathway_interference}[args.mode](args)
     except D.DownloadError as e:
         sys.exit(str(e))
 
