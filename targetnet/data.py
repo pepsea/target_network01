@@ -136,17 +136,29 @@ def load_reactome_fi(path=None, demo=False):
     else:
         df = pd.read_csv(path, sep="\t", dtype=str)
     df.columns = [c.strip() for c in df.columns]
+    mode = _cfgmod.db(CFG, "reactome_fi", "mode") or "directed"
+    min_score = float(_cfgmod.db(CFG, "reactome_fi", "min_score") or 1.0)
+    n0 = len(df)
+    ann = df["Annotation"].fillna("").str.lower() if "Annotation" in df.columns else pd.Series("", index=df.index)
+    sc = pd.to_numeric(df["Score"], errors="coerce").fillna(0) if "Score" in df.columns else pd.Series(1.0, index=df.index)
+    df = df[(sc >= min_score) & ~ann.str.contains("predicted")]          # drop NBC-predicted FIs
+    ann = ann.loc[df.index]
+    # direction is trusted only when the annotation states a regulatory mechanism (not mere co-membership in a reaction/complex)
+    mech = ann.str.contains("activat|inhibit|catalyz|catalys|phosphorylat|ubiquitinat|expression regulat|regulat", regex=True)
     rows, und = [], []
-    for a, b, d in zip(df.Gene1.str.upper(), df.Gene2.str.upper(), df.Direction.fillna("-").str.strip()):
+    for a, b, d, m in zip(df.Gene1.str.upper(), df.Gene2.str.upper(), df.Direction.fillna("-").str.strip(), mech):
         if a == b: continue
-        if "->" in d or d == "<->": rows.append((a, b, 1))
-        if "<-" in d or d == "<->": rows.append((b, a, 1))
-        if "-|" in d: rows.append((a, b, -1))
-        if "|-" in d: rows.append((b, a, -1))
-        if d == "-": und.append((a, b))
+        if mode == "off": break
+        if mode == "directed" and m and d != "-":
+            if "->" in d or d == "<->": rows.append((a, b, 1))
+            if "<-" in d or d == "<->": rows.append((b, a, 1))
+            if "-|" in d: rows.append((a, b, -1))
+            if "|-" in d: rows.append((b, a, -1))
+        else:
+            und.append((a, b))
     dirdf = pd.DataFrame(rows, columns=["src", "dst", "effect"]).assign(mechanism="reactome_FI", residue="", source="Reactome").drop_duplicates(["src", "dst"])
     unddf = pd.DataFrame(und, columns=["a", "b"]).assign(source="Reactome")
-    print(f"[Reactome] {len(dirdf)} directed, {len(unddf)} undirected FI edges")
+    print(f"[Reactome] FI rows {n0} -> after score/predicted filter {len(df)} -> directed (mechanistic) {len(dirdf)}, context {len(unddf)}  [mode={mode}]")
     return dirdf, unddf
 
 
@@ -160,6 +172,7 @@ def merge_directed(*dfs):
         if len(set(eff)) > 1: effect = 0           # databases disagree -> ambiguous
         res = ";".join(sorted({r for r in g.residue if r}))
         w = EDGE_WEIGHT.get(srcs, 0.7)
+        if srcs == "Reactome": w = float(_cfgmod.db(CFG, "reactome_fi", "weight") or 0.5)
         if "score" in g and g.score.notna().any():        # SIGNOR confidence score (0-1): scale within [0.6, 1.0] x base weight
             w = w * (0.6 + 0.4 * float(g.score.max()))
         return pd.Series(dict(effect=effect, mechanism=";".join(sorted(set(g.mechanism))), residue=res, source=srcs, weight=round(w, 3)))

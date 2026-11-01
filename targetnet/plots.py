@@ -78,11 +78,17 @@ def _edge_traces(fig, edges, pos, rad, color_fn=None, dash_fn=None, name="edge",
 
 
 def _cap_nodes(nodes, edges, max_nodes, keep_ids=()):
-    """Keep the seed, then the best-scoring nodes up to max_nodes (endpoints first); drop edges to removed nodes."""
+    """Keep the seed, the nodes on the best paths of the top-scoring endpoints (so hop structure survives), then the
+    best remaining nodes up to max_nodes; drop edges to removed nodes."""
     if len(nodes) <= max_nodes: return nodes, edges, False
+    byid = {n["id"]: n for n in nodes}
     keep = {n["id"] for n in nodes if n.get("cls") == "seed" or n["id"] in keep_ids}
-    ranked = sorted([n for n in nodes if n["id"] not in keep], key=lambda n: (not n.get("is_endpoint", False), -n.get("score", 0)))
-    for n in ranked:
+    ends = sorted([n for n in nodes if n.get("is_endpoint")], key=lambda n: -n.get("score", 0))
+    for n in ends:                                   # whole best path of each endpoint, best endpoints first
+        path = [p.strip() for p in str(n.get("best_path", "")).split(">")]
+        if len(keep | set(path)) > max_nodes: break
+        keep |= {p for p in path if p in byid}
+    for n in sorted(nodes, key=lambda n: -n.get("score", 0)):
         if len(keep) >= max_nodes: break
         keep.add(n["id"])
     nodes = [n for n in nodes if n["id"] in keep]

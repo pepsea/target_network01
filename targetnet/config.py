@@ -18,7 +18,10 @@ DEFAULTS = {
     "allow_download": True,
     "databases": {
         "signor":      {"path": None, "url": "https://signor.uniroma2.it/getData.php?organism=9606"},
-        "reactome_fi": {"path": None, "url": "https://reactome.org/download/tools/ReatomeFIs/FIsInGene_070323_with_annotations.txt.zip"},
+        "reactome_fi": {"path": None, "url": "https://reactome.org/download/tools/ReatomeFIs/FIsInGene_070323_with_annotations.txt.zip",
+                        "mode": "directed",      # directed = curated activate/inhibit/catalyse FIs join the walk; context = undirected layer only; off
+                        "min_score": 1.0,        # FI score: 1.0 = pathway-annotated; <1 = NBC-predicted (excluded by default)
+                        "weight": 0.5},          # edge weight for Reactome-only directed edges (SIGNOR = 0.9)
         "tf_list":     {"path": None, "url": "http://humantfs.ccbr.utoronto.ca/download/v_1.01/DatabaseExtract_v_1.01.csv"},
         "uniprot":     {"path": None, "url": "https://rest.uniprot.org/uniprotkb/stream?query=organism_id:9606+AND+reviewed:true&fields=accession,gene_primary,keyword,cc_subcellular_location&format=tsv"},
                                                              # bulk human reviewed UniProt tsv -> receptors + compartments offline

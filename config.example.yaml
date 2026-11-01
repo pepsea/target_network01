@@ -8,7 +8,10 @@ databases:
   signor:                     # SIGNOR causal interactions dump (tsv), CC-BY 4.0
     path: ~/data/signor/signor_human.tsv
   reactome_fi:                # Reactome FI network with annotations (.txt or .zip), CC0
-    path: ~/data/reactome/FIsInGene_070323_with_annotations.txt.zip
+    path: ~/Documents/database/reactome/FIsInGene_061424_with_annotations.txt
+    mode: directed            # directed | context | off  (context = never used for the walk, only as physical/context layer)
+    min_score: 1.0            # keep FI score >= this (1.0 = pathway-annotated only; predicted FIs are always dropped)
+    weight: 0.5               # walk weight of Reactome-only directed edges (SIGNOR 0.9) -> curated SIGNOR routes win
   tf_list:                    # Lambert 2018 human TFs (DatabaseExtract_v_1.01.csv), CC-BY
     path: ~/data/tf/DatabaseExtract_v_1.01.csv
   uniprot:                    # bulk human reviewed UniProt tsv (fields: accession, gene_primary, keyword, cc_subcellular_location)

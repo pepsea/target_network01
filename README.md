@@ -104,6 +104,13 @@ python target_net.py regulon-url --save ~/Documents/database/dorothea/dorothea_A
 then set `databases.regulon.path` to that file. (`regulon-url` alone just prints the URL for curl.)
 The loader also accepts the simple format `tf,target,mor,confidence` and decoupler-style `source,target,weight`.
 
+## Reactome FI input (important for result quality)
+Reactome "functional interactions" collapse whole pathways into gene–gene edges (e.g. hundreds of GPCRs `->` AKT1 in one hop).
+By default the loader therefore (a) drops NBC-*predicted* FIs (`min_score: 1.0`), (b) uses an FI's direction only when its
+annotation names a mechanism (activate / inhibit / catalyse / phosphorylate / expression-regulate) — other FIs become
+undirected context edges — and (c) gives Reactome-only directed edges weight 0.5 (SIGNOR 0.9), so curated SIGNOR routes
+win. `reactome_fi.mode: context` removes Reactome from the walk entirely; `off` disables it.
+
 ## SIGNOR input
 Either the API dump or SIGNOR's full download `all_data_DD_MM_YY.tsv` works (`databases.signor.path`). The full file is
 filtered to human (TAX_ID 9606) protein→protein rows; the SIGNOR confidence `SCORE` scales the edge weight (×0.6–1.0).
