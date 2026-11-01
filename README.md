@@ -19,6 +19,21 @@ the DepMap part of the demo is **simulated** and labelled as such).
 `docs/DATA_SETUP.md` lists every database (source page, command, expected file, licence, update cadence);
 `bash scripts/setup_data.sh ~/Documents/database` downloads everything that can be fetched automatically.
 
+Which file each mode needs (`python target_net.py check-config` shows what is present):
+
+| YAML key | file | needed by | how to get it |
+|---|---|---|---|
+| `signor` | `signor/all_data_12_07_26.tsv` | all modes | SIGNOR "download all data" (CC-BY 4.0) |
+| `reactome_fi` | `reactome/FIsInGene_*_with_annotations.txt` | context layer, all modes | Reactome FI download (CC0) |
+| `uniprot` | `uniprot/uniprot_human_reviewed.tsv` | receptors + compartments (upstream, cell map) | one `curl` to the UniProt REST stream (see DATA_SETUP) |
+| `tf_list` | `tf/DatabaseExtract_v_1.01.csv` | **downstream, crosstalk** (walk endpoints) | `curl -o ~/Documents/database/tf/DatabaseExtract_v_1.01.csv http://humantfs.ccbr.utoronto.ca/download/v_1.01/DatabaseExtract_v_1.01.csv` — or open http://humantfs.ccbr.utoronto.ca/download.php → "Human TFs – Database Extract (v1.01)". Static 2018 list, CC-BY; rows `Is TF? == Yes` (1,639) are used |
+| `regulon` | `dorothea/dorothea_ABC_commercial.tsv` | downstream (TF → genes) | `python target_net.py regulon-url --save <path>` (OmniPath, commercial-licensed records) |
+| `depmap` | `depmap/CRISPRGeneEffect.csv` (+ mutations, expression) | sl, co-essentiality | `python fetch_depmap.py --out ~/Documents/database/depmap` |
+| `hpa_tissue` | `hpa/rna_tissue_consensus_tissues.tsv` | `--tissue` filter only | HPA download (CC BY-SA) |
+
+With `allow_download: true` a missing `tf_list`, `regulon`, `reactome_fi` or `hpa_tissue` is fetched into `cache_dir` on first use;
+placing the files under the paths above is what makes strict offline mode (`allow_download: false`) possible.
+
 ## Configuration (YAML)
 Copy `config.example.yaml` to `target_net.yaml` (project root) or `~/.target_net.yaml` and set the local paths of each
 database; anything left `null` is downloaded into `cache_dir` when `allow_download: true`. `--config FILE` / `config=` overrides.
