@@ -37,6 +37,7 @@ DEFAULTS = {
         "hpa_tissue":  {"path": None, "url": "https://www.proteinatlas.org/download/rna_tissue_consensus.tsv.zip"},
     },
     "walk": {"max_depth": 5, "min_score": 0.25, "hub_penalty": 0.25},
+    "crosstalk": {"max_depth": 3, "min_score": 0.3, "min_sign_confidence": 0.5, "max_edges_plot": 40},   # local walks: cross-talk is proximal interference
     "sl":   {"min_lost": 20, "padj": 0.05, "delta": 0.15},
 }
 

@@ -199,9 +199,13 @@ def run_crosstalk(args):
     C, X = resolve_symbol(args.causal), resolve_symbol(args.goi)
     out = os.path.join(run_dir(args, f"crosstalk_{C}_x_{X}"), "crosstalk"); os.makedirs(out, exist_ok=True)
     G, und = build_signaling(args)
+    xt = D.CFG.get("crosstalk", {})            # local walks for cross-talk (unless the user overrode on the command line)
+    if not getattr(args, "_explicit_depth", False): args.max_depth = xt.get("max_depth", 3)
+    if not getattr(args, "_explicit_score", False): args.min_score = xt.get("min_score", 0.3)
+    print(f"[crosstalk] walks: max_depth {args.max_depth}, min_score {args.min_score} (crosstalk: section of the config)")
     _, dC, gC = run_downstream(args, gene=C, quiet=True, exclude=(X,), G=G, und=und)   # C's pathway, X removed
     _, dX, gX = run_downstream(args, gene=X, quiet=True, exclude=(C,), G=G, und=und)   # X's pathway, C removed
-    res = Wk.crosstalk(G, dC, dX, C, X, gC, gX)
+    res = Wk.crosstalk(G, dC, dX, C, X, gC, gX, tf_universe=D.load_tfs(args.demo), min_conf=xt.get("min_sign_confidence", 0.5))
     for k in ("shared", "interference", "tf_agreement", "gene_agreement"):
         res[k].to_csv(os.path.join(out, f"{k}.csv"), index=False)
     json.dump(res["summary"], open(os.path.join(out, "summary.json"), "w"), indent=1)
@@ -228,9 +232,13 @@ def run_crosstalk(args):
     s = res["summary"]
     print(f"\n[crosstalk] {X} vs {C} pathway -> {out}/   (each pathway walked with the other gene removed)")
     print(f"  cross-talk index {s['crosstalk_index']}  (shared endpoints {s['n_shared_endpoints']} / causal endpoints {s['n_endpoints_causal']})")
-    print(f"  shared nodes {s['n_shared_nodes']}, interference edges {s['n_interference_edges']}, endpoints syn/ant/mixed = {s['synergistic']}/{s['antagonistic']}/{s['mixed']}")
+    print(f"  TF overlap {s['tf_overlap']} of {s['tf_causal']} causal TFs; {X} reaches {s['tf_goi']}/{s['tf_universe']} TFs in the graph "
+          f"({(s['goi_coverage_of_all_tfs'] or 0)*100:.0f}%) -> expected overlap {s['tf_overlap_expected']}, enrichment {s['tf_enrichment']}, p = {s['tf_overlap_p']:.2g}")
+    print(f"  shared nodes {s['n_shared_nodes']}, interference edges {s['n_interference_edges']}, endpoints syn/ant/mixed/low-conf = "
+          f"{s['synergistic']}/{s['antagonistic']}/{s['mixed']}/{s['low_confidence']}")
     if len(res["interference"]):
-        print(res["interference"][["from_node", "to_node", "mechanism", "residue", "net_effect_of_goi_on_target", "causal_effect_on_target", "agreement", "via_feedback_loop"]].to_string(index=False))
+        print("  top interference edges (ranked by proximity to both genes):")
+        print(res["interference"].head(15)[["rank", "from_node", "to_node", "hops_goi_to_from", "hops_causal_to_to", "mechanism", "residue", "net_effect_of_goi_on_target", "causal_effect_on_target", "agreement"]].to_string(index=False))
 
 
 def apply_config(args):
@@ -281,6 +289,8 @@ def main():
     p.add_argument("--source", default=None); p.add_argument("--conf", default=None); p.add_argument("--license", default=None)
     p = sub.add_parser("crosstalk"); p.add_argument("--causal", required=True); p.add_argument("--goi", required=True); common(p); regulon_opts(p)
     args = ap.parse_args()
+    args._explicit_depth = getattr(args, "max_depth", None) is not None
+    args._explicit_score = getattr(args, "min_score", None) is not None
     if args.mode == "regulon-url":
         cfg = Cf.load_config(args.config)
         url = D.omnipath_regulon_url(args.source or Cf.db(cfg, "regulon", "source") or "dorothea", args.conf or Cf.db(cfg, "regulon", "conf") or "ABC",

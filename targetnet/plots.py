@@ -266,8 +266,11 @@ def cell_map_figure(json_path, width=900, height=700, max_nodes=150, focus=None)
 
 
 # --------------------------------------------------------------------------- cross-talk (three lanes)
-def crosstalk_figure(json_path, width=1050, height=700, max_nodes=200, focus=None):
+def crosstalk_figure(json_path, width=1050, height=700, max_nodes=120, max_edges=40, focus=None):
+    """Draws the top `max_edges` interference edges (ranked by proximity to both genes) and the nodes around them."""
     X = _load(json_path); fset, fvals = parse_focus(focus); fset_or_none = fset if focus is not None else None
+    n_all_edges = len(X["interference"])
+    X["interference"] = sorted(X["interference"], key=lambda e: (e.get("rank", 0)))[:max_edges]
     keep = {e["from_node"] for e in X["interference"]} | {e["to_node"] for e in X["interference"]} | fset
     nodes, edges, capped = _cap_nodes(X["nodes"], X["edges"], max_nodes, keep_ids=keep); X["edges"] = edges
     byid = {n["id"]: n for n in nodes}
@@ -283,8 +286,9 @@ def crosstalk_figure(json_path, width=1050, height=700, max_nodes=200, focus=Non
             pos[n["id"]] = (x, 94 - 84 * (hp or 0) / (max_hop + 1) + (1.5 if i % 2 else -1.5))
     rad = lambda nid: 2.0 if byid[nid]["cls"] == "seed" else 0.9 + 1.2 * byid[nid]["score"]
     s = X["summary"]
-    fig = _base((f"(top {max_nodes} of {len(X['nodes'])} nodes) " if capped else "") + f"Cross-talk: does {X['goi']} influence the {X['causal']} pathway?  index {s['crosstalk_index']} · "
-                f"interference edges {s['n_interference_edges']} · endpoints syn/ant/mixed {s['synergistic']}/{s['antagonistic']}/{s['mixed']}", width, height)
+    enr = f"TF-overlap enrichment {s.get('tf_enrichment')} (p={s.get('tf_overlap_p', float('nan')):.1g})" if s.get("tf_enrichment") is not None else f"index {s['crosstalk_index']}"
+    fig = _base(f"Cross-talk: does {X['goi']} influence the {X['causal']} pathway?  {enr} · showing top {len(X['interference'])} of {n_all_edges} interference edges"
+                + (f" · {max_nodes} of {len(X['nodes'])} nodes" if capped else "") + f" · endpoints syn/ant/mixed {s['synergistic']}/{s['antagonistic']}/{s['mixed']}", width, height)
     _edge_traces(fig, X["edges"], pos, rad, color_fn=(lambda e: "#bbbbbb") if focus is None else (lambda e: "#999999" if (e["source"] in fset or e["target"] in fset) else "#d4d4d4"),
                  dash_fn=lambda e: "dot" if e.get("effect", 1) == 0 else "solid", width=0.8)
     inter = [dict(source=e["from_node"], target=e["to_node"], effect=e["edge_effect"], agreement=e["agreement"], mech=e.get("mechanism", ""), res=e.get("residue", "")) for e in X["interference"]]

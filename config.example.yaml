@@ -40,6 +40,12 @@ walk:
   min_score: 0.25           # live AKT1: 0.2 -> 903 nodes/79 receptors, 0.3 -> 222/13; 0.25 is the compromise
   hub_penalty: 0.25
 
+crosstalk:                  # cross-talk mode walks are deliberately local (hubs like AKT1 reach most of the graph at depth 5)
+  max_depth: 3
+  min_score: 0.3
+  min_sign_confidence: 0.5  # endpoints count as synergistic/antagonistic only when both signs are this confident
+  max_edges_plot: 40        # interference edges drawn (ranked by proximity); all are in interference.csv
+
 sl:
   min_lost: 20
   padj: 0.05

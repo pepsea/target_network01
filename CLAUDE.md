@@ -28,5 +28,5 @@ Expected textbook recovery: AKT1 upstream -> RTKs via PI3K/PDPK1; MAPK1 x AKT1 -
 - Live-data calibration (AKT1, 2026-11-01): SIGNOR 15,428 direct+indirect pp edges; Reactome FI 'mechanistic' still 109k -> default mode=context; SIGNOR DIRECT=NO dropped; walk defaults max_depth 5 / min_score 0.2. Second run (SIGNOR direct only, Reactome context): upstream 903 nodes / 79 receptors; receptor ranking sensible (RET, EGFR, FGFR1, IGF1R, PDGFRs). Best-path sign misled for EGFR (via PTPN1) -> consensus sign added. min_score calibration on live AKT1 upstream: 0.2 -> 903 nodes/79 receptors, 0.3 -> 222/13 -> default set to 0.25. Note: SIGNOR entity 'PDK1' = pyruvate dehydrogenase kinase, not PDPK1
 - SIGNOR complexes / protein families: expand to member proteins (currently dropped by load_signor); membership available offline-free via OmniPath `complexes?resources=SIGNOR`
 - Chaperone/client edge layer (Taipale 2012, Picard list) beyond SIGNOR
-- Cross-talk baseline: same target vs several unrelated core genes
+- Cross-talk: live AKT1 x ACVR1B gave index 1.0 / 2,265 nodes (hub saturation) -> local walks (depth 3, min_score 0.3), hypergeometric TF-overlap enrichment, confidence-gated agreement, proximity-ranked edges. Still to do: automatic baseline (same target vs N random core genes)
 - Boolean/logic simulation of the signed graph

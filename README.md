@@ -76,7 +76,9 @@ endpoint, past `--max-depth`, or below `--min-score`.
 - *interference edge*: a node reachable only from X acting directly on a node of C's pathway (or on C itself), with the
   SIGNOR residue when known; `net_effect_of_goi_on_target` = sign(X→u) × effect(u→v), compared with C's own effect on v
   → synergistic / antagonistic / mixed. `via_feedback_loop` marks from-nodes that are also upstream of X.
-- *cross-talk index*: shared endpoints (TFs + target genes) / all endpoints of C.
+- *cross-talk index*: shared endpoints (TFs + target genes) / all endpoints of C — saturates for hub targets, so also reported:
+- *TF-overlap enrichment*: observed overlap of C's and X's TF sets vs. expected given how many of all TFs in the graph X reaches (hypergeometric p).
+- Cross-talk walks are local by default (`crosstalk: max_depth 3, min_score 0.3`); agreement is counted only where both signs have confidence ≥ 0.5.
 
 Every node table carries: hops, path score, sign, ambiguous, best_path, feedback (node is also upstream of the seed),
 coessentiality_r, physical_with_seed (STRING / Reactome undirected), degree, compartment (UniProt).

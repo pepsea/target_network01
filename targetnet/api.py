@@ -68,7 +68,8 @@ def research_crosstalk(core, target, **options):
     Each pathway is walked with the other gene removed. Outputs go to <out>/<YYYYMMDD_HHMMSS>_crosstalk_<CORE>_x_<TARGET>/.
     Returns summary, shared nodes, interference edges, endpoint agreement, run_dir, view paths.
     """
-    a = _args(**options); cli.apply_config(a); a.causal, a.goi = core, target
+    a = _args(**options); a._explicit_depth = options.get("max_depth") is not None; a._explicit_score = options.get("min_score") is not None
+    cli.apply_config(a); a.causal, a.goi = core, target
     C, X = cli.resolve_symbol(core), cli.resolve_symbol(target)
     root = cli.run_dir(a, f"crosstalk_{C}_x_{X}")
     cli.run_crosstalk(a)
@@ -127,9 +128,14 @@ def summarize_gene(r, n=10):
 def summarize_crosstalk(x, n=10):
     s = x["summary"]
     lines = [f"== does {x['target']} influence the {x['core']} pathway? ==",
-             f"cross-talk index {s['crosstalk_index']} (shared endpoints {s['n_shared_endpoints']}/{s['n_endpoints_causal']}); "
-             f"shared nodes {s['n_shared_nodes']}; interference edges {s['n_interference_edges']}; endpoints syn/ant/mixed {s['synergistic']}/{s['antagonistic']}/{s['mixed']}"]
+             f"cross-talk index {s['crosstalk_index']} (shared endpoints {s['n_shared_endpoints']}/{s['n_endpoints_causal']})",
+             f"TF overlap {s['tf_overlap']}/{s['tf_causal']} vs expected {s['tf_overlap_expected']} -> enrichment {s['tf_enrichment']}, p = {s['tf_overlap_p']:.2g} "
+             f"({x['target']} reaches {(s['goi_coverage_of_all_tfs'] or 0)*100:.0f}% of all TFs in the graph)",
+             f"shared nodes {s['n_shared_nodes']}; interference edges {s['n_interference_edges']}; endpoints syn/ant/mixed/low-conf "
+             f"{s['synergistic']}/{s['antagonistic']}/{s['mixed']}/{s['low_confidence']}"]
     if len(x["interference"]):
+        lines.append("top interference edges (by proximity):")
         for e in x["interference"].head(n).itertuples():
-            lines.append(f"  {e.from_node} -> {e.to_node} [{e.residue or e.mechanism}] {e.agreement}" + (" (feedback loop)" if e.via_feedback_loop else ""))
+            lines.append(f"  #{e.rank} {e.from_node} -> {e.to_node} (hops {e.hops_goi_to_from}/{e.hops_causal_to_to}) [{e.residue or e.mechanism}] {e.agreement}"
+                         + (" (feedback loop)" if e.via_feedback_loop else ""))
     return "\n".join(lines)
