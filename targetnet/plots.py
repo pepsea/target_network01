@@ -55,7 +55,7 @@ CAPTIONS = {
  "crosstalk": [
   "LANES  left = nodes reached only from the core (causal) gene · centre = reached from both · right = reached only from the gene of interest (GOI). Row ≈ hops from the respective seed.",
   "THIN GREY LINES = ordinary signaling edges of the two pathways (▶ activation, ┃ inhibition, dotted = unknown sign).",
-  "THICK COLOURED LINES = interference edges: a GOI-side node acting on a core-pathway node. green = pushes that node the same way as the core gene (synergistic) · red = opposite way (antagonistic) · grey = undetermined.",
+  "COLOURED LINES = interference edges: a GOI-side node acting on a core-pathway node. green = pushes that node the same way as the core gene (synergistic) · red = opposite way (antagonistic) · grey = undetermined.",
   "       long-dashed = chaperone / protein-stability edge rather than phosphorylation. Only the top-ranked edges (by proximity to both genes) are drawn; all are in interference.csv. Hover the midpoint for residue and mechanism.",
   "NODES  dark blue = the two seed genes · purple = shared · light blue = core pathway · orange = GOI pathway; black outline = TF endpoint; size ∝ path score.",
   "TITLE  TF-overlap enrichment = observed / expected overlap of the two TF sets given how many TFs the GOI reaches at all (hypergeometric p)."],
@@ -87,9 +87,9 @@ def _edge_legend(fig, kinds=("act", "inh", "amb")):
              "inh": ("signaling edge, inhibition (┃)", dict(color=COL["edge"], width=1.6, dash="solid")),
              "amb": ("signaling edge, unknown sign", dict(color=COL["amb"], width=1.6, dash="dot")),
              "phys": ("physical contact only (no direction)", dict(color=COL["phys"], width=1.2, dash="dot")),
-             "syn": ("interference: synergistic", dict(color=COL["syn"], width=2.6)),
-             "ant": ("interference: antagonistic", dict(color=COL["ant"], width=2.6)),
-             "chap": ("interference via chaperone / stability", dict(color=COL["mix"], width=2.6, dash="longdash")),
+             "syn": ("interference: synergistic", dict(color=COL["syn"], width=1.6)),
+             "ant": ("interference: antagonistic", dict(color=COL["ant"], width=1.6)),
+             "chap": ("interference via chaperone / stability", dict(color=COL["mix"], width=1.6, dash="longdash")),
              "faded": ("edge not touching a focus gene", dict(color="#c9c9c9", width=1.6))}
     for k in kinds:
         name, line = items[k]
@@ -354,7 +354,7 @@ def crosstalk_figure(json_path, width=1050, height=700, max_nodes=120, max_edges
                  dash_fn=lambda e: "dot" if e.get("effect", 1) == 0 else "solid", width=0.8)
     inter = [dict(source=e["from_node"], target=e["to_node"], effect=e["edge_effect"], agreement=e["agreement"], mech=e.get("mechanism", ""), res=e.get("residue", "")) for e in X["interference"]]
     _edge_traces(fig, inter, pos, rad, color_fn=lambda e: COL["syn"] if e["agreement"] == "synergistic" else COL["ant"] if e["agreement"] == "antagonistic" else COL["mix"],
-                 dash_fn=lambda e: "longdash" if "chaperone" in (e.get("mech") or "") else "solid", width=2.4)
+                 dash_fn=lambda e: "longdash" if "chaperone" in (e.get("mech") or "") else "solid", width=1.4)
     # invisible midpoints carry the hover text of interference edges
     mx = [(pos[e["source"]][0] + pos[e["target"]][0]) / 2 for e in inter if e["source"] in pos and e["target"] in pos]
     my = [(pos[e["source"]][1] + pos[e["target"]][1]) / 2 for e in inter if e["source"] in pos and e["target"] in pos]
