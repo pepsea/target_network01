@@ -151,8 +151,8 @@ def _node_trace(fig, nodes, pos, rad, fill, line_col, hover, name, line_w=1.5, d
         col = [(_value_colour(values[n["id"]], vmax) if n["id"] in values else fill(n)) for n in hi]
         fig.add_trace(go.Scatter(x=[pos[n["id"]][0] for n in hi], y=[pos[n["id"]][1] for n in hi], mode="markers+text",
                                  text=[f"<b>{n['id']}</b>" + (f" {values[n['id']]:+.2f}" if n["id"] in values else "") for n in hi],
-                                 textposition="middle right", textfont=dict(size=11),
-                                 marker=dict(size=[rad(n["id"]) * 9 for n in hi], color=col, line=dict(color="#111", width=2)),
+                                 textposition="middle right", textfont=dict(size=10),
+                                 marker=dict(size=[rad(n["id"]) * 6.5 for n in hi], color=col, line=dict(color="#111", width=1.6)),
                                  hovertext=[hover(n) + (f"<br>focus value {values[n['id']]:+.3f}" if n["id"] in values else "<br>focus gene") for n in hi],
                                  hoverinfo="text", name=f"{name} — focus" + (" (colour = value)" if values else ""), showlegend=show))
 
