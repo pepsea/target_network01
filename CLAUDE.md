@@ -24,6 +24,7 @@ Expected textbook recovery: AKT1 upstream -> RTKs via PI3K/PDPK1; MAPK1 x AKT1 -
 
 ## Open items
 - Live-data validation (sandbox had no network): run `upstream --gene MAPK1` live, tune walk thresholds
+- SIGNOR complexes / protein families: expand to member proteins (currently dropped by load_signor)
 - Chaperone/client edge layer (Taipale 2012, Picard list) beyond SIGNOR
 - Cross-talk baseline: same target vs several unrelated core genes
 - Boolean/logic simulation of the signed graph

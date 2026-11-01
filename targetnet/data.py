@@ -69,25 +69,42 @@ def cached_json(key, url, params=None, sleep=0.25):
 
 # ------------------------------------------------------------------ signaling edges
 def load_signor(demo=False):
-    """DataFrame: src, dst, effect(+1/-1/0), mechanism, residue, source."""
+    """
+    DataFrame: src, dst, effect(+1/-1/0), mechanism, residue, source, score.
+    Accepts either the per-organism API dump (getData.php?organism=9606) or SIGNOR's full download
+    'all_data_DD_MM_YY.tsv' (all organisms; filtered here to human, TAX_ID 9606).
+    Only protein -> protein rows are kept; complexes / protein families / chemicals are dropped (see note in README).
+    """
     if demo:
         return _demo_signor()
     loc = _local("signor")
-    txt = open(loc).read() if loc else cached_text("signor_9606", _cfgmod.db(CFG, "signor", "url"))
+    txt = open(loc, encoding="utf-8", errors="replace").read() if loc else cached_text("signor_9606", _cfgmod.db(CFG, "signor", "url"))
     print(f"[SIGNOR] source: {loc or 'download'}")
-    df = pd.read_csv(io.StringIO(txt), sep="\t", dtype=str)
-    cols = {c.upper(): c for c in df.columns}
-    need = ["ENTITYA", "TYPEA", "ENTITYB", "TYPEB", "EFFECT", "MECHANISM", "RESIDUE"]
-    df = df.rename(columns={cols[c]: c for c in need if c in cols})
-    df = df[(df.TYPEA == "protein") & (df.TYPEB == "protein")]
+    df = pd.read_csv(io.StringIO(txt), sep="\t", dtype=str, quoting=3, on_bad_lines="skip")
+    # normalise header variants: 'ENTITYA' / 'ENTITY A' / 'entitya' / 'TAX_ID' / 'TAXID'
+    norm = {c: c.upper().replace(" ", "").replace("_", "") for c in df.columns}
+    df = df.rename(columns=norm)
+    need = ["ENTITYA", "TYPEA", "ENTITYB", "TYPEB", "EFFECT"]
+    missing = [c for c in need if c not in df.columns]
+    if missing:
+        raise SystemExit(f"[SIGNOR] unexpected header, missing {missing}; got {list(df.columns)[:12]}")
+    n_all = len(df)
+    if "TAXID" in df.columns:                       # all_data file: keep human rows only
+        df = df[df.TAXID.astype(str).str.strip() == "9606"]
+    types = df.TYPEA.str.lower().str.strip(), df.TYPEB.str.lower().str.strip()
+    n_human = len(df)
+    df = df[(types[0] == "protein") & (types[1] == "protein")]
     eff = df.EFFECT.str.lower().map(lambda e: 1 if "up-regulates" in e else -1 if "down-regulates" in e else 0)
-    out = pd.DataFrame({"src": df.ENTITYA.str.upper(), "dst": df.ENTITYB.str.upper(), "effect": eff,
-                        "mechanism": df.MECHANISM.fillna(""), "residue": df.get("RESIDUE", pd.Series("", index=df.index)).fillna(""),
-                        "source": "SIGNOR"})
-    out = out[out.src != out.dst]
-    # if the same pair has conflicting signs keep the first non-zero
-    out = out.sort_values("effect", key=lambda s: s == 0).drop_duplicates(["src", "dst"])
-    print(f"[SIGNOR] {len(out)} directed edges")
+    score = pd.to_numeric(df["SCORE"], errors="coerce") if "SCORE" in df.columns else pd.Series(float("nan"), index=df.index)
+    out = pd.DataFrame({"src": df.ENTITYA.str.upper().str.strip(), "dst": df.ENTITYB.str.upper().str.strip(), "effect": eff,
+                        "mechanism": df.get("MECHANISM", pd.Series("", index=df.index)).fillna(""),
+                        "residue": df.get("RESIDUE", pd.Series("", index=df.index)).fillna(""),
+                        "source": "SIGNOR", "score": score})
+    out = out[(out.src != out.dst) & (out.src != "") & (out.dst != "")]
+    # same pair reported several times: keep the row with a sign (non-zero) and the highest SIGNOR score
+    out = out.sort_values(["effect", "score"], key=lambda s: (s == 0) if s.name == "effect" else -s.fillna(0)).drop_duplicates(["src", "dst"])
+    print(f"[SIGNOR] rows {n_all} -> human {n_human} -> protein-protein unique edges {len(out)}"
+          + (f" (SIGNOR score median {out.score.median():.2f})" if out.score.notna().any() else ""))
     return out
 
 
@@ -132,8 +149,10 @@ def merge_directed(*dfs):
         effect = int(eff.iloc[0]) if len(eff) else 0
         if len(set(eff)) > 1: effect = 0           # databases disagree -> ambiguous
         res = ";".join(sorted({r for r in g.residue if r}))
-        return pd.Series(dict(effect=effect, mechanism=";".join(sorted(set(g.mechanism))), residue=res, source=srcs,
-                              weight=EDGE_WEIGHT.get(srcs, 0.7)))
+        w = EDGE_WEIGHT.get(srcs, 0.7)
+        if "score" in g and g.score.notna().any():        # SIGNOR confidence score (0-1): scale within [0.6, 1.0] x base weight
+            w = w * (0.6 + 0.4 * float(g.score.max()))
+        return pd.Series(dict(effect=effect, mechanism=";".join(sorted(set(g.mechanism))), residue=res, source=srcs, weight=round(w, 3)))
     out = allr.groupby(["src", "dst"], sort=False).apply(agg, include_groups=False).reset_index()
     return out
 

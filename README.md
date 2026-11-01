@@ -80,6 +80,12 @@ In notebooks use the Plotly versions (`targetnet.plots`, via `api.figure(view_pa
 - `crosstalk.html` — three lanes (C pathway / shared / X pathway); thick green/red edges = interference; tables of edges and endpoint agreement.
 - `synthetic_lethality.html` — volcano plot + ranked hits (orange), pathway members in blue.
 
+## SIGNOR input
+Either the API dump or SIGNOR's full download `all_data_DD_MM_YY.tsv` works (`databases.signor.path`). The full file is
+filtered to human (TAX_ID 9606) protein→protein rows; the SIGNOR confidence `SCORE` scales the edge weight (×0.6–1.0).
+Rows whose entity is a **complex** or **protein family** (e.g. mTORC1, "AKT family") are currently dropped — expanding them to
+member proteins (SIGNOR complexes/families files) is an open item.
+
 ## Licenses
 SIGNOR CC-BY 4.0 · Reactome CC0 · STRING CC-BY 4.0 · UniProt CC-BY 4.0 · Lambert TF list CC-BY · DepMap CC-BY 4.0 ·
 HPA CC BY-SA 3.0 (used only as an expression filter, not redistributed) · DoRothEA: regulons aggregate several sources;
