@@ -38,8 +38,8 @@ DEFAULTS = {
         "omnipath": {"mode": "full", "datasets": "omnipath,pathwayextra,kinaseextra,ligrecextra", "license": "commercial", "path": None, "signed_only": True, "min_references": 1},
         "hpa_tissue":  {"path": None, "url": "https://www.proteinatlas.org/download/rna_tissue_consensus.tsv.zip"},
     },
-    "walk": {"max_depth": 5, "min_score": 0.25, "hub_penalty": 0.25, "seed_rescue": True},
-    "crosstalk": {"max_depth": 3, "min_score": 0.3, "min_sign_confidence": 0.5, "max_edges_plot": 40},   # local walks: cross-talk is proximal interference
+    "walk": {"max_depth": 5, "min_score": 0.35, "hub_penalty": 0.3, "seed_rescue": True},
+    "crosstalk": {"max_depth": 3, "min_score": 0.4, "min_sign_confidence": 0.5, "max_edges_plot": 40},   # local walks: cross-talk is proximal interference
     "sl":   {"min_lost": 20, "padj": 0.05, "delta": 0.15},
 }
 

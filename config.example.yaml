@@ -76,15 +76,16 @@ databases:
 # ---- walk parameters (upstream / downstream modes) --------------------------------------------------------
 walk:
   max_depth: 5                  # hops from the seed
-  min_score: 0.25               # drop nodes whose best-path score (edge weights x hub penalty) is below this; live AKT1: 0.2 -> 903 nodes/79 receptors, 0.3 -> 222/13
-  hub_penalty: 0.25             # 0 = none, 0.5 = strong down-weighting of highly connected nodes
+  min_score: 0.35               # drop nodes whose best-path score (edge weights x hub penalty) is below this. Calibrated on SIGNOR+OmniPath (81k edges):
+                                # AKT1 upstream receptors at hub 0.25: 0.30 -> 203, 0.35 -> 110, 0.40 -> 42; at hub 0.40: 0.25 -> 82, 0.30 -> 38  (python target_net.py calibrate --gene AKT1)
+  hub_penalty: 0.3              # 0 = none, 0.5 = strong down-weighting of highly connected nodes
   seed_rescue: true             # seed with no edge in the walk direction (SIGNOR gap): add its own mechanistic Reactome FI edges so the walk can start
   seed_rescue_weight: 0.3       # low on purpose: a rescue edge onto a hub must not pull the hub's neighbourhood in (ACVRL1 -> PPP1CA case)
 
 # ---- cross-talk mode: deliberately local walks (hubs reach most of the graph at depth 5) -------------------
 crosstalk:
   max_depth: 3
-  min_score: 0.3
+  min_score: 0.4                # local walks on the denser SIGNOR+OmniPath graph (was 0.3 on SIGNOR alone)
   min_sign_confidence: 0.5      # endpoints count as synergistic/antagonistic only when both signs are at least this confident
   max_edges_plot: 40            # interference edges drawn in the figure (all are in interference.csv)
 
