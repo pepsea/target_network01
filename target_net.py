@@ -266,6 +266,26 @@ def run_crosstalk_screen(args):
     return tab
 
 
+# ----------------------------------------------------------------------------- calibrate: node counts vs min_score (walk only)
+def run_calibrate(args):
+    """Walk the seed up and down at several min_score / hub_penalty values (no annotation, no DepMap) and print the sizes,
+    so walk.min_score can be set on the actual graph (SIGNOR + OmniPath + ...) instead of guessed."""
+    gene = resolve_symbol(args.gene)
+    G, und = build_signaling(args)
+    receptors = D.load_receptors(args.demo); ligands = D.load_ligands(args.demo) - receptors; tfs = D.load_tfs(args.demo)
+    Wk.prepare_seed(G, gene, "up", D.CFG, D.REACTOME_DIRECTED); Wk.prepare_seed(G, gene, "down", D.CFG, D.REACTOME_DIRECTED)
+    scores = [float(x) for x in args.scores.split(",")]; hubs = [float(x) for x in args.hubs.split(",")]
+    print(f"\n[calibrate] {gene}: graph {G.number_of_nodes()} nodes / {G.number_of_edges()} edges; max_depth {args.max_depth}")
+    print(f"{'hub_penalty':>11} {'min_score':>9} | {'up nodes':>8} {'receptors':>9} {'ligands':>7} {'<=2 hops':>8} | {'down nodes':>10} {'TFs':>5} {'<=2 hops':>8}")
+    for h in hubs:
+        for ms in scores:
+            up = Wk.signed_walk(G, gene, receptors | ligands, direction="up", max_depth=args.max_depth, min_score=ms, hub_strength=h, extend_to=ligands)
+            dn = Wk.signed_walk(G, gene, tfs, direction="down", max_depth=args.max_depth, min_score=ms, hub_strength=h)
+            nrec = int(up.node.isin(receptors).sum()); nlig = int(up.node.isin(ligands).sum())
+            print(f"{h:>11.2f} {ms:>9.2f} | {len(up):>8} {nrec:>9} {nlig:>7} {int((up.hops <= 2).sum()):>8} | {len(dn):>10} {int(dn.is_endpoint.sum()):>5} {int((dn.hops <= 2).sum()):>8}")
+    print("\nPick the min_score where the receptor list is a few dozen textbook inputs (not hundreds) and set walk.min_score in target_net.yaml.")
+
+
 # ----------------------------------------------------------------------------- mode: synthetic lethality
 def run_sl(args):
     gene = resolve_symbol(args.gene); out = os.path.join(run_dir(args, f"sl_{gene}"), "sl"); os.makedirs(out, exist_ok=True)
@@ -477,6 +497,9 @@ def main():
     p = sub.add_parser("upstream"); p.add_argument("--gene", required=True); common(p)
     p = sub.add_parser("downstream"); p.add_argument("--gene", required=True); common(p); regulon_opts(p)
     p = sub.add_parser("sl"); p.add_argument("--gene", required=True); common(p)
+    p = sub.add_parser("calibrate", help="node / receptor / TF counts of the walk at several min_score and hub_penalty values (walk only, fast)")
+    p.add_argument("--gene", required=True); p.add_argument("--scores", default="0.2,0.25,0.3,0.35,0.4,0.5"); p.add_argument("--hubs", default="0.25")
+    common(p)
     p = sub.add_parser("check-config", help="show which file each database loader will use with the current YAML")
     p.add_argument("--config", default=None)
     p = sub.add_parser("signor-lookup", help="show every SIGNOR row mentioning a gene (why does the seed have / lack edges?)")
@@ -522,7 +545,8 @@ def main():
         return
     apply_config(args)
     try:
-        {"upstream": run_upstream, "downstream": run_downstream, "sl": run_sl, "crosstalk": run_crosstalk, "crosstalk-screen": run_crosstalk_screen}[args.mode](args)
+        {"upstream": run_upstream, "downstream": run_downstream, "sl": run_sl, "crosstalk": run_crosstalk, "crosstalk-screen": run_crosstalk_screen,
+         "calibrate": run_calibrate}[args.mode](args)
     except D.DownloadError as e:
         sys.exit(str(e))
 

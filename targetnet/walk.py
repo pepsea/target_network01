@@ -49,7 +49,9 @@ def prepare_seed(G, seed, direction, cfg, reactome_directed):
     """Apply the same seed handling everywhere (pair analysis, screen, gene research): Reactome seed rescue when the
     seed has no edge in the walk direction and walk.seed_rescue is on. Mutates G (adds only the seed's own edges)."""
     if cfg.get("walk", {}).get("seed_rescue", True):
-        w = float(((cfg.get("databases") or {}).get("reactome_fi") or {}).get("weight") or 0.5)
+        # weight 0.3 (not the Reactome-directed 0.5): a rescue edge that lands on a hub (ACVRL1 -> PPP1CA) then falls under
+        # min_score after the hub penalty, so an FI direction artefact cannot drag the whole hub neighbourhood into the walk
+        w = float(cfg.get("walk", {}).get("seed_rescue_weight", 0.3))
         rescue_seed(G, seed, direction, reactome_directed, w)
 
 

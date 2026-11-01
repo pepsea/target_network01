@@ -223,6 +223,27 @@ def load_reactome_fi(path=None, demo=False):
     return dirdf, unddf
 
 
+def _expand_complexes(df):
+    """OmniPath names a complex by its members joined with '_' (COMPLEX:ACVR2A_ACVRL1). A relation of a complex is attributed to
+    each member protein (mechanism tagged complex:<name>) so receptor complexes, mTORC1, NF-kB etc. join the protein graph."""
+    import re
+    def members(x):
+        x = str(x).replace("COMPLEX:", "")
+        return [m for m in x.split("_") if m] if "_" in x else [x]
+    is_cx = df.src.str.contains("_") | df.dst.str.contains("_")
+    if not is_cx.any(): return df
+    plain, cx = df[~is_cx], df[is_cx]
+    rows = []
+    for r in cx.itertuples():
+        for a in members(r.src):
+            for b in members(r.dst):
+                rows.append(dict(src=a, dst=b, effect=r.effect, mechanism=f"{r.mechanism};complex:{r.src if '_' in r.src else r.dst}",
+                                 residue=r.residue, source=r.source, score=r.score))
+    ex = pd.DataFrame(rows, columns=df.columns)
+    print(f"[OmniPath] {len(cx)} complex relations expanded to {len(ex)} member-protein edges")
+    return pd.concat([plain, ex], ignore_index=True)
+
+
 def _omnipath_commercial_resources():
     """Resource names whose licence OmniPath records as purpose 'commercial' (from /resources; cached). Local filter: the
     server-side license= parameter is not relied upon."""
@@ -258,8 +279,8 @@ def load_omnipath_signed(demo=False, signor_df=None, seeds=()):
         elif not CFG.get("allow_download", True): print("[OmniPath] offline and no databases.omnipath.path -> layer skipped"); return empty
         else:
             url = (OMNIPATH_URL + f"?datasets={datasets}&organisms=9606&genesymbols=1&directed=1&types=post_translational"
-                   "&fields=sources,references,type,is_directed,is_stimulation,is_inhibition")
-            txt = cached_text(f"omnipath_signed_{datasets.replace(',', '_')}", url); src_note = "OmniPath API (cached)"
+                   "&fields=sources,references,type,is_directed,is_stimulation,is_inhibition,consensus_stimulation,consensus_inhibition")
+            txt = cached_text(f"omnipath_signed2_{datasets.replace(',', '_')}", url); src_note = "OmniPath API (cached)"
         ok = _omnipath_commercial_resources() if (_cfgmod.db(CFG, "omnipath", "license") or "commercial") == "commercial" else None
     except DownloadError as e:
         print(f"{e}\n[OmniPath] layer skipped"); return empty
@@ -272,18 +293,25 @@ def load_omnipath_signed(demo=False, signor_df=None, seeds=()):
         if ok is None: return parts
         return [x for x in parts if x in ok or x.split("_")[0] in ok]
     kept = df.sources.map(keep_sources); df = df[kept.map(len) > 0]; kept = kept[df.index]
-    stim = df.is_stimulation.astype(str).isin(["1", "True", "true"]); inh = df.is_inhibition.astype(str).isin(["1", "True", "true"])
-    eff = (stim & ~inh).astype(int) - (inh & ~stim).astype(int)
+    T = lambda col: df[col].astype(str).isin(["1", "True", "true"]) if col in df.columns else pd.Series(False, index=df.index)
+    stim, inh = T("is_stimulation"), T("is_inhibition")
+    cstim, cinh = T("consensus_stimulation"), T("consensus_inhibition")
+    # sign: OmniPath's consensus over resources when it resolves the conflict, else the plain flags; stim+inh without consensus = ambiguous (0)
+    eff = pd.Series(0, index=df.index)
+    eff[(stim & ~inh) | (cstim & ~cinh)] = 1
+    eff[(inh & ~stim) | (cinh & ~cstim)] = -1
+    unsigned = ~stim & ~inh
     nref = df.get("references", pd.Series("", index=df.index)).map(lambda r: len([x for x in str(r).split(";") if x]))
     out = pd.DataFrame({"src": df.source_genesymbol.str.upper(), "dst": df.target_genesymbol.str.upper(), "effect": eff,
                         "mechanism": kept.map(lambda l: "omnipath:" + "|".join(sorted(set(l)))), "residue": "", "source": "OmniPath",
                         "score": (nref / 4).clip(lower=0.25, upper=1.0)})
-    out = out[(out.src != out.dst) & (out.src != "") & (out.dst != "")]
-    out = out.sort_values(["effect", "score"], key=lambda c: (c == 0) if c.name == "effect" else -c).drop_duplicates(["src", "dst"])
-    if _cfgmod.db(CFG, "omnipath", "signed_only") in (None, True):      # unsigned directed edges add nodes but no sign -> noise in the walk
-        out = out[out.effect != 0]
+    if _cfgmod.db(CFG, "omnipath", "signed_only") in (None, True):      # records with no sign at all add nodes but no information; ambiguous (stim+inh) are kept as sign 0
+        out = out[~unsigned.loc[out.index]]
     minref = int(_cfgmod.db(CFG, "omnipath", "min_references") or 1)
     if minref > 1: out = out[out.score * 4 >= minref]
+    out = _expand_complexes(out)                                        # COMPLEX:A_B -> member proteins
+    out = out[(out.src != out.dst) & (out.src != "") & (out.dst != "")]
+    out = out.sort_values(["effect", "score"], key=lambda c: (c == 0) if c.name == "effect" else -c).drop_duplicates(["src", "dst"])
     n_lic = len(out)
     seeds = {str(g).upper() for g in (seeds or ()) if g}
     if mode == "gaps" and signor_df is not None and len(signor_df):
