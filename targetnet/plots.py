@@ -143,6 +143,18 @@ def _edge_traces(fig, edges, pos, rad, color_fn=None, dash_fn=None, name="edge",
                                              line=dict(width=max(1.5, width), color=hcol))))
 
 
+def _within_hops(nodes, edges, max_hops, keep_ids=()):
+    """Keep only nodes within max_hops of a seed (either side in cross-talk); seeds and keep_ids always stay. None = no limit."""
+    if max_hops is None: return nodes, edges
+    def h(n):
+        hs = [x for x in (n.get("hops"), n.get("hops_c"), n.get("hops_x")) if x is not None]
+        return min(hs) if hs else 0
+    keep = {n["id"] for n in nodes if n.get("cls") == "seed" or n["id"] in keep_ids or h(n) <= max_hops}
+    nodes = [n for n in nodes if n["id"] in keep]
+    edges = [e for e in edges if e.get("source", e.get("from_node")) in keep and e.get("target", e.get("to_node")) in keep]
+    return nodes, edges
+
+
 def _cap_nodes(nodes, edges, max_nodes, keep_ids=()):
     """Cap the drawn nodes at max_nodes so the view stays readable. Priority: the seed(s) and FOCUS genes (always kept),
     then direct neighbours of a seed (hop 1, best score first), then the best paths of the top-scoring endpoints (so the hop
@@ -263,10 +275,13 @@ def _focus_edge_style(focus):
 
 
 # --------------------------------------------------------------------------- flow (upstream / downstream)
-def flow_figure(json_path, width=1000, height=650, max_nodes=150, focus=None, caption=True):
-    """focus: genes to highlight (list / file / dict gene->value); other nodes become small grey dots."""
+def flow_figure(json_path, width=1000, height=650, max_nodes=150, focus=None, caption=True, max_hops=None):
+    """focus: genes to highlight (list / file / dict gene->value); other nodes become small grey dots.
+    max_hops: draw only nodes within this many hops of the seed (endpoints beyond it are dropped too); None = all."""
     F = _load(json_path)
     fset, fvals = parse_focus(focus); fset_or_none = fset if focus is not None else None
+    F["nodes"], F["edges"] = _within_hops(F["nodes"], F["edges"], max_hops, keep_ids=fset)
+    if max_hops is not None: F["subtitle"] = f"within {max_hops} hop(s): " + F.get("subtitle", "")
     nodes, edges, capped = _cap_nodes(F["nodes"], F["edges"], max_nodes, keep_ids=fset)
     F["edges"] = edges; byid = {n["id"]: n for n in nodes}
     if capped: F["subtitle"] = f"showing top {max_nodes} of {len(F['nodes'])} nodes by path score (full table in CSV / D3 view). " + F.get("subtitle", "")
@@ -360,8 +375,9 @@ _ZONES = dict(extracellular=(50, 50, 52, 56), membrane=(50, 50, 46, 50), cytosol
               mitochondrion=(80, 32, 0, 9), ER_golgi=(76, 74, 0, 9))   # cx, cy, r_inner, r_outer
 
 
-def cell_map_figure(json_path, width=900, height=700, max_nodes=150, focus=None, caption=True):
+def cell_map_figure(json_path, width=900, height=700, max_nodes=150, focus=None, caption=True, max_hops=None):
     N = _load(json_path); fset, fvals = parse_focus(focus); fset_or_none = fset if focus is not None else None
+    N["nodes"], N["edges"] = _within_hops(N["nodes"], N["edges"], max_hops, keep_ids=fset)
     nodes, edges, capped = _cap_nodes(N["nodes"], N["edges"], max_nodes, keep_ids=fset); N["edges"] = edges
     byid = {n["id"]: n for n in nodes}
     if capped: N["mode"] = f"{N.get('mode', '')} (top {max_nodes} of {len(N['nodes'])} nodes)"
@@ -443,9 +459,15 @@ def screen_figure(table_path, width=900, height=600, caption=True, label_top=25)
 
 
 # --------------------------------------------------------------------------- cross-talk (three lanes)
-def crosstalk_figure(json_path, width=1100, height=820, max_nodes=120, max_edges=40, focus=None, caption=True):
-    """Draws the top `max_edges` interference edges (ranked by proximity to both genes) and the nodes around them."""
+def crosstalk_figure(json_path, width=1100, height=820, max_nodes=120, max_edges=40, focus=None, caption=True, max_hops=None):
+    """Draws the top `max_edges` interference edges (ranked by proximity to both genes) and the nodes around them.
+    max_hops: keep only nodes within this many hops of C or X, and interference edges whose both ends are within it."""
     X = _load(json_path); fset, fvals = parse_focus(focus); fset_or_none = fset if focus is not None else None
+    if max_hops is not None:
+        X["nodes"], X["edges"] = _within_hops(X["nodes"], X["edges"], max_hops, keep_ids=fset)
+        ids = {n["id"] for n in X["nodes"]}
+        X["interference"] = [e for e in X["interference"] if e["from_node"] in ids and e["to_node"] in ids]
+        X["contacts"] = [c for c in X.get("contacts", []) if c["goi_side"] in ids and c["core_side"] in ids]
     n_all_edges = len(X["interference"])
     X["interference"] = sorted(X["interference"], key=lambda e: (e.get("rank", 0)))[:max_edges]
     keep = {e["from_node"] for e in X["interference"]} | {e["to_node"] for e in X["interference"]} | fset

@@ -72,7 +72,7 @@ def research_gene(gene, run_sl=None, **options):
     return res
 
 
-def gene_table(r, focus=None, focus_only=False):
+def gene_table(r, focus=None, focus_only=False, max_hops=None):
     """
     One row per gene reached from the seed, upstream and/or downstream, merged into a single ranked table.
     Columns: gene, direction (upstream / downstream / both), hops (shortest, either direction), hops_up, hops_down,
@@ -82,7 +82,7 @@ def gene_table(r, focus=None, focus_only=False):
     Sorted by hops then total influence.
     focus: same formats as the figures (plain text / list / file / dict gene->value). Adds `focus` (bool) and `focus_value`,
     puts focus genes first, and records focus genes NOT reached by the walk in table.attrs["focus_missing"].
-    focus_only=True returns only the focus genes.
+    focus_only=True returns only the focus genes.  max_hops: keep only genes within this many hops (either direction).
     """
     up, dn = r["upstream_nodes"], r["downstream_nodes"]
     cols = ["node", "hops", "score", "influence", "sign", "sign_confidence", "is_endpoint", "endpoint_type", "feedback", "coessentiality_r",
@@ -121,6 +121,7 @@ def gene_table(r, focus=None, focus_only=False):
     t = t[[c for c in order if c in t.columns]].rename(columns={"node": "gene"})
     for c in ("hops_up", "hops_down"):
         if c in t.columns: t[c] = t[c].astype("Int64")
+    if max_hops is not None: t = t[t.hops <= max_hops]
     t = t.sort_values(["hops", "influence_total"], ascending=[True, False]).reset_index(drop=True)
     if focus is not None:
         from .plots import parse_focus
@@ -170,12 +171,14 @@ def research_crosstalk(core, target, **options):
                                                 target_flow=f"{root}/downstream_{X}_without_{C}/flow.html"))
 
 
-def figure(view_path, focus=None, **kw):
+def figure(view_path, focus=None, max_hops=None, **kw):
     """Plotly figure for a view: pass the .html or .json path from result['views'] (e.g. figure(r['views']['downstream_flow'])).
+    max_hops: draw only the first N hops around the analysed gene(s) (the run itself is not repeated; the tables keep everything).
     focus: genes to highlight — list of symbols, a text/CSV file (symbol[, value] per line), or dict/Series gene -> value
     (e.g. log2FC from a proteomics experiment). Other nodes are drawn as small grey dots; focus genes keep colour, size and label,
     and are coloured by value when values are given."""
     if focus is not None: kw["focus"] = focus
+    if max_hops is not None: kw["max_hops"] = max_hops
     from . import plots
     jp = os.path.splitext(view_path)[0] + ".json"
     if not os.path.exists(jp):
@@ -183,7 +186,7 @@ def figure(view_path, focus=None, **kw):
     kind = os.path.basename(jp)
     fn = plots.flow_figure if kind.startswith(("flow", "core_impact")) else plots.cell_map_figure if kind.startswith("cell_map") else \
          plots.crosstalk_figure if kind.startswith("crosstalk") else plots.volcano_figure
-    if fn is plots.volcano_figure: kw.pop("focus", None)
+    if fn is plots.volcano_figure: kw.pop("focus", None); kw.pop("max_hops", None)
     return fn(jp, **kw)
 
 
