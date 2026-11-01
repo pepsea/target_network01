@@ -50,6 +50,12 @@ def hub_penalty(G, max_deg=None, strength=0.5):
     return {n: 1.0 - strength * math.log1p(d) / math.log1p(m) for n, d in deg.items()}
 
 
+# typed empty walk table: boolean columns must be bool, otherwise df[df.is_endpoint] on an empty frame selects columns, not rows
+EMPTY_WALK = pd.DataFrame({"node": pd.Series(dtype=str), "hops": pd.Series(dtype=int), "score": pd.Series(dtype=float), "influence": pd.Series(dtype=float),
+                           "sign": pd.Series(dtype=int), "sign_confidence": pd.Series(dtype=float), "sign_bestpath": pd.Series(dtype=int),
+                           "ambiguous": pd.Series(dtype=bool), "is_endpoint": pd.Series(dtype=bool), "best_path": pd.Series(dtype=str)})
+
+
 def signed_walk(G, seed, endpoints, direction="down", max_depth=6, min_score=0.15, hub_strength=0.25, extend_to=None):
     """
     Returns DataFrame: node, hops, score, sign(+1/-1/0 mixed), ambiguous(bool), is_endpoint, best_path (list)
@@ -106,7 +112,7 @@ def signed_walk(G, seed, endpoints, direction="down", max_depth=6, min_score=0.1
         print(f"[walk] {seed} ({direction}): 0 nodes reached. {len(first)} direct neighbours in this direction; "
               + (f"best first-hop score {first[0][1]} ({first[0][0]}) < min_score {min_score} -> lower min_score or hub_penalty"
                  if first else "the seed has no edges in this direction in the loaded graph (or they were removed)"))
-        return pd.DataFrame(columns=["node", "hops", "score", "influence", "sign", "sign_confidence", "sign_bestpath", "ambiguous", "is_endpoint", "best_path"])
+        return EMPTY_WALK.copy()
     if len(df):
         inf = signed_influence(G, seed, [seed] + list(df.node), direction, max_depth, hub_strength)
         df = df.rename(columns={"sign": "sign_bestpath"}).merge(inf, on="node", how="left")
@@ -240,7 +246,7 @@ def crosstalk(G, causal_df, goi_df, causal, goi, causal_genes=None, goi_genes=No
     n_shared_end = len(tf_rows) + len(gene_rows)
     agreements = [r["agreement"] for r in tf_rows + gene_rows]
     # TF-level enrichment: is the overlap of C's TFs and X's TFs larger than expected given how many TFs X reaches at all?
-    tfC = {n for n in causal_df[causal_df.is_endpoint].node}; tfX = {n for n in goi_df[goi_df.is_endpoint].node}
+    tfC = set(causal_df.node[causal_df.is_endpoint.astype(bool)]); tfX = set(goi_df.node[goi_df.is_endpoint.astype(bool)])
     universe = set(tf_universe) & set(G.nodes) if tf_universe else (tfC | tfX)
     M, nX, nC, k = len(universe), len(tfX & universe), len(tfC & universe), len(tfC & tfX & universe)
     expected = nC * nX / M if M else 0.0
