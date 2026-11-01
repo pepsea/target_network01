@@ -84,6 +84,8 @@ Every node table carries: hops, path score, sign, ambiguous, best_path, feedback
 coessentiality_r, physical_with_seed (STRING / Reactome undirected), degree, compartment (UniProt).
 
 ## Views
+Every Plotly figure carries a caption explaining its lines (▶ activation, ┃ inhibition, dotted = unknown sign, light dotted = physical contact,
+thick green/red = synergistic/antagonistic interference, long-dash = chaperone) and nodes; `api.legend(kind)` prints the same key as text.
 **Focus list**: `figure(view, focus=[...])` / `FOCUS` in the notebooks highlights a gene list (e.g. proteomics hits; a file with
 `symbol<TAB>value` colours them blue→red by value) and draws every other node as a small grey dot; focus genes always survive the node cap.
 

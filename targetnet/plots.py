@@ -39,6 +39,63 @@ def _base(title, w=1000, h=650):
     return fig
 
 
+CAPTIONS = {
+ "flow": [
+  "LINES  dark grey curve = signaling edge from the signed graph (SIGNOR direct relations; Reactome only if mode=directed); it runs from regulator to target.",
+  "       ▶ arrowhead = activation / up-regulation · ┃ bar head = inhibition / down-regulation · dotted grey = relation of unknown sign.",
+  "       Line thickness ∝ edge confidence (SIGNOR score). Only edges among drawn nodes are shown; the walk itself used the whole graph.",
+  "NODES  dark blue = seed gene · blue = endpoint (receptor in upstream view, transcription factor in downstream view) · grey = intermediate.",
+  "       Fill saturation ∝ path score. Outline: green = seed activates this node (consensus over all paths), red = inhibits, grey dashed = mixed; long dashes = feedback node (also upstream of the seed).",
+  "COLUMNS hop N = shortest number of edges from the seed; endpoints are collected in the last column. Right-hand boxes: DoRothEA target genes per TF (↑ induced, ↓ repressed by the seed); hover to list them.",
+  "FOCUS  with a focus list: focus genes keep colour/size (blue→red = supplied value, e.g. log2FC); all other nodes small grey; edges not touching a focus gene are lighter."],
+ "cell_map": [
+  "LINES  dark grey curve with ▶ (activation) or ┃ (inhibition) = signaling edge; dotted light grey straight line = physical contact only (STRING / Reactome undirected), no direction or sign.",
+  "NODES  placed by UniProt subcellular location (membrane ring, cytosol ring, nucleus, lysosome, mitochondrion, ER/Golgi); position inside a zone is arbitrary.",
+  "       dark blue = seed · blue = receptor · purple = TF · light blue = upstream node · grey = downstream node; size ∝ path score; grey outline = mixed sign."],
+ "crosstalk": [
+  "LANES  left = nodes reached only from the core (causal) gene · centre = reached from both · right = reached only from the gene of interest (GOI). Row ≈ hops from the respective seed.",
+  "THIN GREY LINES = ordinary signaling edges of the two pathways (▶ activation, ┃ inhibition, dotted = unknown sign).",
+  "THICK COLOURED LINES = interference edges: a GOI-side node acting on a core-pathway node. green = pushes that node the same way as the core gene (synergistic) · red = opposite way (antagonistic) · grey = undetermined.",
+  "       long-dashed = chaperone / protein-stability edge rather than phosphorylation. Only the top-ranked edges (by proximity to both genes) are drawn; all are in interference.csv. Hover the midpoint for residue and mechanism.",
+  "NODES  dark blue = the two seed genes · purple = shared · light blue = core pathway · orange = GOI pathway; black outline = TF endpoint; size ∝ path score.",
+  "TITLE  TF-overlap enrichment = observed / expected overlap of the two TF sets given how many TFs the GOI reaches at all (hypergeometric p)."],
+ "volcano": [
+  "x = Δ CRISPR gene effect (seed-lost − seed-intact cell lines; more negative = more essential when the seed is lost) · y = −log10 FDR.",
+  "orange = passes both thresholds (synthetic-lethal candidate) · blue = gene already on the seed's signaling network (context, not SL class) · grey = other genes. Dashed lines = thresholds."],
+}
+
+
+def add_caption(fig, kind, extra=None):
+    """Write the key to the figure's lines and nodes under the plot (travels with PNG exports)."""
+    lines = CAPTIONS.get(kind, []) + (extra or [])
+    txt = "<br>".join(lines)
+    fig.update_layout(margin=dict(b=40 + 16 * len(lines)))
+    fig.add_annotation(xref="paper", yref="paper", x=0, y=-0.02 - 0.0 , xanchor="left", yanchor="top", align="left", showarrow=False,
+                       text=f"<span style='font-size:10px;color:#555'>{txt}</span>", bgcolor="rgba(255,255,255,0)")
+    fig.update_layout(height=fig.layout.height + 16 * len(lines) + 30, legend=dict(orientation="h", x=0, y=-0.02 - (16 * len(lines) + 20) / fig.layout.height))
+    return fig
+
+
+def legend_text(kind):
+    """Plain-text key for a view kind ('flow' | 'cell_map' | 'crosstalk' | 'volcano'), e.g. for notebooks or reports."""
+    return "\n".join(CAPTIONS.get(kind, []))
+
+
+def _edge_legend(fig, kinds=("act", "inh", "amb")):
+    """Legend-only traces explaining the line styles (drawn off-canvas)."""
+    items = {"act": ("signaling edge, activation (▶)", dict(color=COL["edge"], width=1.6, dash="solid")),
+             "inh": ("signaling edge, inhibition (┃)", dict(color=COL["edge"], width=1.6, dash="solid")),
+             "amb": ("signaling edge, unknown sign", dict(color=COL["amb"], width=1.6, dash="dot")),
+             "phys": ("physical contact only (no direction)", dict(color=COL["phys"], width=1.2, dash="dot")),
+             "syn": ("interference: synergistic", dict(color=COL["syn"], width=2.6)),
+             "ant": ("interference: antagonistic", dict(color=COL["ant"], width=2.6)),
+             "chap": ("interference via chaperone / stability", dict(color=COL["mix"], width=2.6, dash="longdash")),
+             "faded": ("edge not touching a focus gene", dict(color="#c9c9c9", width=1.6))}
+    for k in kinds:
+        name, line = items[k]
+        fig.add_trace(go.Scatter(x=[None], y=[None], mode="lines", line=line, name=name, showlegend=True, hoverinfo="skip"))
+
+
 def _edge_traces(fig, edges, pos, rad, color_fn=None, dash_fn=None, name="edge", width=1.2, head_px=7):
     """Edges as cubic S-curves, one line trace per (colour, dash) style; arrow/bar heads as ONE rotated-marker trace.
     (No per-edge annotations: those make Plotly quadratic and take minutes for a few thousand edges.)"""
@@ -168,7 +225,7 @@ def _focus_edge_style(focus):
 
 
 # --------------------------------------------------------------------------- flow (upstream / downstream)
-def flow_figure(json_path, width=1000, height=650, max_nodes=150, focus=None):
+def flow_figure(json_path, width=1000, height=650, max_nodes=150, focus=None, caption=True):
     """focus: genes to highlight (list / file / dict gene->value); other nodes become small grey dots."""
     F = _load(json_path)
     fset, fvals = parse_focus(focus); fset_or_none = fset if focus is not None else None
@@ -222,6 +279,8 @@ def flow_figure(json_path, width=1000, height=650, max_nodes=150, focus=None):
         fig.add_annotation(x=col_x(c), y=99, text=("seed" if c == 0 else ("receptors" if F["mode"] == "upstream" else "TFs") if c == ncol - 1 else f"hop {c}"),
                            showarrow=False, font=dict(size=10, color="#888"))
     fig.update_xaxes(range=[-2, 130 if F.get("genes") else 104]); fig.update_yaxes(range=[0, 102])
+    _edge_legend(fig, ("act", "inh", "amb") + (("faded",) if focus is not None else ()))
+    if caption: add_caption(fig, "flow")
     return fig
 
 
@@ -230,7 +289,7 @@ _ZONES = dict(membrane=(50, 50, 46, 50), cytosol=(50, 50, 22, 32), nucleus=(50, 
               mitochondrion=(80, 32, 0, 9), ER_golgi=(76, 74, 0, 9))   # cx, cy, r_inner, r_outer
 
 
-def cell_map_figure(json_path, width=900, height=700, max_nodes=150, focus=None):
+def cell_map_figure(json_path, width=900, height=700, max_nodes=150, focus=None, caption=True):
     N = _load(json_path); fset, fvals = parse_focus(focus); fset_or_none = fset if focus is not None else None
     nodes, edges, capped = _cap_nodes(N["nodes"], N["edges"], max_nodes, keep_ids=fset); N["edges"] = edges
     byid = {n["id"]: n for n in nodes}
@@ -262,11 +321,13 @@ def cell_map_figure(json_path, width=900, height=700, max_nodes=150, focus=None)
         _node_trace(fig, [n for n in nodes if n["cls"] == cls], pos, rad, lambda n, c=cls: cmap[c],
                     lambda n: "#999" if n.get("sign") == 0 else "#111", hover, cls, line_w=1, focus=fset_or_none, values=fvals)
     fig.update_xaxes(range=[0, 100], scaleanchor="y"); fig.update_yaxes(range=[0, 100])
+    _edge_legend(fig, ("act", "inh", "amb", "phys"))
+    if caption: add_caption(fig, "cell_map")
     return fig
 
 
 # --------------------------------------------------------------------------- cross-talk (three lanes)
-def crosstalk_figure(json_path, width=1050, height=700, max_nodes=120, max_edges=40, focus=None):
+def crosstalk_figure(json_path, width=1050, height=700, max_nodes=120, max_edges=40, focus=None, caption=True):
     """Draws the top `max_edges` interference edges (ranked by proximity to both genes) and the nodes around them."""
     X = _load(json_path); fset, fvals = parse_focus(focus); fset_or_none = fset if focus is not None else None
     n_all_edges = len(X["interference"])
@@ -283,7 +344,7 @@ def crosstalk_figure(json_path, width=1050, height=700, max_nodes=120, max_edges
         arr.sort(key=lambda n: -n["score"]); span = 26 if lane != "shared" else 24
         for i, n in enumerate(arr):
             x = lane_x[lane] if len(arr) == 1 else lane_x[lane] - span / 2 + span * (i + 0.5) / len(arr)
-            pos[n["id"]] = (x, 94 - 84 * (hp or 0) / (max_hop + 1) + (1.5 if i % 2 else -1.5))
+            pos[n["id"]] = (x, 94 - 86 * (hp or 0) / max(max_hop, 1) + (1.5 if i % 2 else -1.5))
     rad = lambda nid: 2.0 if byid[nid]["cls"] == "seed" else 0.9 + 1.2 * byid[nid]["score"]
     s = X["summary"]
     enr = f"TF-overlap enrichment {s.get('tf_enrichment')} (p={s.get('tf_overlap_p', float('nan')):.1g})" if s.get("tf_enrichment") is not None else f"index {s['crosstalk_index']}"
@@ -308,11 +369,13 @@ def crosstalk_figure(json_path, width=1050, height=700, max_nodes=120, max_edges
         fig.add_annotation(x=lane_x[lane], y=99, text=name.upper(), showarrow=False, font=dict(size=11, color="#888"))
     _node_trace(fig, [n for n in nodes if n["cls"] == "seed"], pos, rad, lambda n: COL["seed"], lambda n: "#111", hover, "seed genes", focus=fset_or_none, values=fvals)
     fig.update_xaxes(range=[0, 100]); fig.update_yaxes(range=[0, 102])
+    _edge_legend(fig, ("act", "inh", "syn", "ant", "chap"))
+    if caption: add_caption(fig, "crosstalk")
     return fig
 
 
 # --------------------------------------------------------------------------- synthetic lethality (volcano)
-def volcano_figure(json_path, width=850, height=600, label_top=20):
+def volcano_figure(json_path, width=850, height=600, label_top=20, caption=True):
     S = _load(json_path); pts = [p for p in S["points"] if p["padj"] and p["padj"] > 0]
     y = lambda p: -math.log10(max(p["padj"], 1e-300))
     fig = _base(f"Synthetic lethality with {S['seed']} loss" + ("  (DEMO: simulated values)" if S.get("demo") else ""), width, height)
@@ -328,4 +391,5 @@ def volcano_figure(json_path, width=850, height=600, label_top=20):
                              textfont=dict(size=9), hoverinfo="skip", showlegend=False))
     th = S["thresholds"]
     fig.add_hline(y=-math.log10(th["padj"]), line=dict(color="#999", dash="dash", width=1)); fig.add_vline(x=-th["delta"], line=dict(color="#999", dash="dash", width=1))
+    if caption: add_caption(fig, "volcano")
     return fig

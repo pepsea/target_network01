@@ -102,6 +102,12 @@ def figure(view_path, focus=None, **kw):
     return fn(jp, **kw)
 
 
+def legend(kind):
+    """Print the key to a view's lines and nodes: kind = 'flow' | 'cell_map' | 'crosstalk' | 'volcano'."""
+    from . import plots
+    print(plots.legend_text(kind))
+
+
 def show(html_path, height=650):
     """Render a saved HTML view inside the notebook."""
     from IPython.display import IFrame, display
