@@ -18,7 +18,7 @@ import plotly.graph_objects as go
 
 # flat, muted palette on white (owner's convention)
 COL = dict(seed="#1a1a1a", endpoint="#2d5f8f", ligand="#3f8f8f", node="#8a8a8a", shared="#6b5b95", causal="#4a7fb5", goi="#b36b3c",
-           syn="#2e7d32", ant="#b23b3b", mix="#888888", edge="#777777", amb="#bbbbbb", phys="#c8c8c8")
+           syn="#2e7d32", ant="#b23b3b", mix="#888888", edge="#8a8a8a", amb="#bdbdbd", phys="#c8c8c8")
 FONT = dict(family="Helvetica, Arial, sans-serif", size=11, color="#222")
 
 
@@ -49,7 +49,7 @@ CAPTIONS = {
   "LINES  the core pathway's own signaling edges (▶ activation, ┃ inhibition). Columns = hops from the core gene. Full table: impact.csv (node, impact, net_sign_from_goi, agreement, via).",
   "READ   red OUTLINE = the target opposes the core gene there (inhibiting the target releases that node); green outline = same direction. Direct nodes at hop 1-2 are the mechanistically closest points; the TF column shows where the influence reaches transcription."],
  "flow": [
-  "LINES  dark grey curve = signaling edge from the signed graph (SIGNOR direct relations, plus custom_edges if configured; Reactome FI only if mode=directed or as seed rescue — hover an edge for its source); it runs from regulator to target.",
+  "LINES  thin grey curve = signaling edge from the signed graph (SIGNOR direct relations, plus custom_edges if configured; Reactome FI only if mode=directed or as seed rescue — hover an edge for its source); it runs from regulator to target.",
   "       ▶ arrowhead = activation / up-regulation · ┃ bar head = inhibition / down-regulation · dotted grey = relation of unknown sign.",
   "       Line thickness ∝ edge confidence (SIGNOR score). Only edges among drawn nodes are shown; the walk itself used the whole graph.",
   "NODES  black diamond = the analysed gene (seed) · blue = endpoint (receptor in upstream view, transcription factor in downstream view) · grey = intermediate.",
@@ -92,20 +92,24 @@ def legend_text(kind):
 
 def _edge_legend(fig, kinds=("act", "inh", "amb")):
     """Legend-only traces explaining the line styles (drawn off-canvas)."""
-    items = {"act": ("signaling edge, activation (▶)", dict(color=COL["edge"], width=1.6, dash="solid")),
-             "inh": ("signaling edge, inhibition (┃)", dict(color=COL["edge"], width=1.6, dash="solid")),
-             "amb": ("signaling edge, unknown sign", dict(color=COL["amb"], width=1.6, dash="dot")),
+    items = {"act": ("signaling edge, activation (▶)", dict(color=COL["edge"], width=1.0, dash="solid")),
+             "inh": ("signaling edge, inhibition (┃)", dict(color=COL["edge"], width=1.0, dash="solid")),
+             "amb": ("signaling edge, unknown sign", dict(color=COL["amb"], width=1.0, dash="dot")),
              "phys": ("physical contact only (no direction)", dict(color=COL["phys"], width=1.2, dash="dot")),
-             "syn": ("interference: synergistic", dict(color=COL["syn"], width=1.6)),
-             "ant": ("interference: antagonistic", dict(color=COL["ant"], width=1.6)),
-             "chap": ("interference via chaperone / stability", dict(color=COL["mix"], width=1.6, dash="longdash")),
+             "syn": ("interference: synergistic", dict(color=COL["syn"], width=1.2)),
+             "ant": ("interference: antagonistic", dict(color=COL["ant"], width=1.2)),
+             "chap": ("interference via chaperone / stability", dict(color=COL["mix"], width=1.2, dash="longdash")),
              "faded": ("edge not touching a focus gene", dict(color="#c9c9c9", width=1.6))}
     for k in kinds:
         name, line = items[k]
         fig.add_trace(go.Scatter(x=[None], y=[None], mode="lines", line=line, name=name, showlegend=True, hoverinfo="skip"))
 
 
-def _edge_traces(fig, edges, pos, rad, color_fn=None, dash_fn=None, name="edge", width=1.2, head_px=7):
+EDGE_WIDTH, EDGE_OPACITY, HEAD_PX = 0.8, 0.55, 6     # thin, light lines: the nodes and labels carry the information
+
+
+def _edge_traces(fig, edges, pos, rad, color_fn=None, dash_fn=None, name="edge", width=None, head_px=None, opacity=None):
+    width = EDGE_WIDTH if width is None else width; head_px = HEAD_PX if head_px is None else head_px; opacity = EDGE_OPACITY if opacity is None else opacity
     """Edges as cubic S-curves, one line trace per (colour, dash) style; arrow/bar heads as ONE rotated-marker trace.
     (No per-edge annotations: those make Plotly quadratic and take minutes for a few thousand edges.)"""
     groups = defaultdict(list)
@@ -136,7 +140,7 @@ def _edge_traces(fig, edges, pos, rad, color_fn=None, dash_fn=None, name="edge",
             ang = math.degrees(math.atan2(x1e - px, y1e - py))
             hx.append(x1e); hy.append(y1e); hang.append(ang)
             hsym.append("triangle-up" if e.get("effect", 1) >= 0 else "line-ew"); hcol.append(col)
-        fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines", line=dict(color=col, width=width, dash=dash), hoverinfo="skip", name=name, showlegend=False))
+        fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines", line=dict(color=col, width=width, dash=dash), opacity=opacity, hoverinfo="skip", name=name, showlegend=False))
     if hx:
         fig.add_trace(go.Scatter(x=hx, y=hy, mode="markers", hoverinfo="skip", showlegend=False,
                                  marker=dict(symbol=hsym, angle=hang, size=head_px + (2 if width > 2 else 0), color=hcol,
@@ -552,7 +556,7 @@ def crosstalk_figure(json_path, width=1100, height=820, max_nodes=None, max_edge
                  dash_fn=lambda e: "dot" if e.get("effect", 1) == 0 else "solid", width=0.8)
     inter = [dict(source=e["from_node"], target=e["to_node"], effect=e["edge_effect"], agreement=e["agreement"], mech=e.get("mechanism", ""), res=e.get("residue", "")) for e in X["interference"]]
     _edge_traces(fig, inter, pos, rad, color_fn=lambda e: COL["syn"] if e["agreement"] == "synergistic" else COL["ant"] if e["agreement"] == "antagonistic" else COL["mix"],
-                 dash_fn=lambda e: "longdash" if "chaperone" in (e.get("mech") or "") else "solid", width=1.4)
+                 dash_fn=lambda e: "longdash" if "chaperone" in (e.get("mech") or "") else "solid", width=1.2, opacity=0.9)
     # invisible midpoints carry the hover text of interference edges
     mx = [(pos[e["source"]][0] + pos[e["target"]][0]) / 2 for e in inter if e["source"] in pos and e["target"] in pos]
     my = [(pos[e["source"]][1] + pos[e["target"]][1]) / 2 for e in inter if e["source"] in pos and e["target"] in pos]
