@@ -334,7 +334,8 @@ def run_pathway_interference(args):
     res["genes"].to_csv(os.path.join(out, "flow_change_genes.csv"), index=False)
     json.dump(res["summary"], open(os.path.join(out, "summary.json"), "w"), indent=1)
     pert = dict(target=X, summary=res["summary"],
-                nodes={r.node: dict(delta=float(r.delta), direction=r.direction, entry=r.entry, via=r.via) for r in res["nodes"].itertuples()},
+                nodes={r.node: dict(delta=float(r.delta_rel) if r.direction != "unchanged" else 0.0, delta_abs=float(r.delta), baseline=float(r.baseline_flow),
+                                    direction=r.direction, entry=r.entry, via=r.via) for r in res["nodes"].itertuples()},
                 genes={r.gene: float(r.delta) for r in res["genes"].itertuples()} if len(res["genes"]) else {},
                 edges=json.loads(res["edges"].to_json(orient="records")) if len(res["edges"]) else [])
     cellp = dict(cell, perturbation=pert)
@@ -344,10 +345,10 @@ def run_pathway_interference(args):
     print(f"[interference] inhibiting {X}: {s_['entry_points']} entry points ({s_['entry_edges']} edges from {X}'s side); "
           f"{s_['nodes_changed']} nodes change ({s_['nodes_decreased']} down / {s_['nodes_increased']} up); TFs {s_['tfs_changed']}/{s_['core_tfs']} "
           f"({s_['tfs_decreased']} down / {s_['tfs_increased']} up; Σdelta down {s_['tf_delta_down']}, up {s_['tf_delta_up']}, net direction {s_['net_direction']:+.2f}); "
-          f"genes {s_['genes_down']} down / {s_['genes_up']} up; flow-change index {s_['flow_change_index']}"
+          f"genes {s_['genes_down']} down / {s_['genes_up']} up; flow-change index {s_['flow_change_index']} (TFs with |relative change| >= {s_['min_rel_change']:.0%})"
           + (f"; {X} is itself on the {C} network" if s_['target_in_core_network'] else ""))
     if len(res["nodes"]):
-        print(res["nodes"][res["nodes"].direction != "unchanged"].head(12)[["node", "hops_from_core", "is_tf", "delta", "direction", "entry", "via"]].to_string(index=False))
+        print(res["nodes"][res["nodes"].direction != "unchanged"].head(12)[["node", "hops_from_core", "is_tf", "baseline_flow", "delta", "delta_rel", "direction", "entry", "via"]].to_string(index=False))
     return res
 
 
@@ -376,14 +377,14 @@ def run_interference_screen(args):
         tl.append(dict(target=r.target, rank=int(r.rank), score=float(r.tf_delta_total), down=float(r.tf_delta_down), up=float(r.tf_delta_up),
                        net_direction=None if pd.isna(r.net_direction) else float(r.net_direction), composite=float(r.composite), tfs_changed=int(r.tfs_changed),
                        direct_entries=int(r.direct_entries), baseline_z=None if pd.isna(r.baseline_z) else float(r.baseline_z),
-                       entries=list(ent.reindex(ent.delta.abs().sort_values(ascending=False).index).node)))
+                       entries=list(ent.reindex(ent.delta_rel.abs().sort_values(ascending=False).index).node)))
     write_html("flow.html", "/*__FLOW_JSON__*/", dict(cell, perturbation=dict(mode="targets", targets=tl)), os.path.join(out, "core_map_targets.html"), d3=False)
     json.dump(dict(core=C, targets=targets, skipped=res["skipped"]), open(os.path.join(out, "screen_info.json"), "w"), indent=1)
     if len(tab):
         from targetnet import plots as P
         P.interference_screen_figure(tab).write_html(os.path.join(out, "interference_screen.html"), include_plotlyjs="cdn")
         P.direction_bars_figure(tab, "tf_delta_down", "tf_delta_up", "CORE TF output DOWN (silenced)", "CORE TF output UP (brake release)",
-                                f"direction of change in the {C} network when each candidate is inhibited", unit="Σ |delta| at TFs",
+                                f"direction of change in the {C} network when each candidate is inhibited", unit="Σ |relative change| at TFs",
                                 caption_text="Per candidate: blue = sum of TF decreases, red = sum of TF increases when it is inhibited. Both large = context-dependent (feedback). Table: interference_screen.csv (tf_delta_down / tf_delta_up / net_tf_delta / net_direction).",
                                 extra_cols=("tfs_down", "tfs_up", "net_direction", "baseline_z")).write_html(os.path.join(out, "interference_direction.html"), include_plotlyjs="cdn")
         print(f"\n[iscreen] ranked {len(tab)} targets -> {out}/interference_screen.csv")

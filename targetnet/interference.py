@@ -8,10 +8,18 @@ Step 2 (perturbation): a "TARGET inhibited" perturbation enters the CORE network
                       (minus because TARGET is INHIBITED: what TARGET normally pushes up goes down, and vice versa).
                       The perturbation then propagates INSIDE the CORE network along CORE's own signed edges
                       (value' = sum_in value(u) x effect(u -> v) x weight(u -> v) x hub penalty), summed over 1..max_depth steps.
-Result per CORE node : delta (signed magnitude), direction (decreased / increased / mixed / unchanged), entry (direct / propagated),
-                      via (TARGET-side nodes that act on it). Per DoRothEA gene: delta = delta(TF) x mode of regulation.
-Interpretation       : delta < 0  = this node's activity (or gene's expression) is predicted to FALL when TARGET is inhibited;
-                      delta > 0 = to RISE (TARGET was a brake on it). Magnitudes are relative within one run (no units).
+Unit perturbation   : the entry strengths are scaled to total mass 1 before propagation (entry_mass = the raw total, kept as the
+                      footprint). The SAME linear propagation started with a unit at CORE gives baseline_flow per node (how much of
+                      CORE's own unit signal arrives there). delta_rel = delta / baseline_flow therefore compares like with like:
+                      one unit of 'TARGET inhibited' against one unit of CORE signal at that node.
+                      A node counts as changed only when |delta_rel| >= interference.min_rel_change (YAML, default 0.1 = 10 %).
+                      Without this relative gate every node of a large live network ends up 'changed' (absolute deltas never reach 0
+                      on a hub-rich network), and flow_change_index saturates at 1.0 for every target.
+Result per CORE node : delta (signed, same units as baseline_flow), baseline_flow, delta_rel, direction (decreased / increased / unchanged),
+                      entry (direct / propagated), via (TARGET-side nodes that act on it). Per DoRothEA gene: delta = delta_rel(TF) x mode of regulation.
+Interpretation       : delta_rel < 0 = this node's activity (or gene's expression) is predicted to FALL when TARGET is inhibited;
+                      > 0 = to RISE (TARGET was a brake on it). -0.30 = the CORE-driven flow at this node drops by about 30 %.
+                      TF sums (tf_delta_down / up) and the index are computed on delta_rel, so they are comparable between runs.
 """
 import math
 from collections import defaultdict
@@ -20,7 +28,25 @@ import pandas as pd
 from . import walk as Wk
 
 
-def interference_flow(G, core_df, core, target, target_df, genes_df=None, max_depth=5, hub_strength=0.25, min_abs=1e-4):
+def _propagate(G, core_nodes, idx, pen, x0, core, max_depth, min_abs, pin_core):
+    """Linear signed propagation of x0 along the CORE network's own edges for max_depth steps; returns the summed influence."""
+    N = len(core_nodes); total = x0.copy(); x = x0.copy()
+    edges = [(idx[a], idx[b], d["effect"] * d["weight"] * pen.get(b, 1.0)) for a, b, d in G.edges(data=True)
+             if a in idx and b in idx and d["effect"] != 0]
+    for _ in range(max_depth):
+        nxt = np.zeros(N)
+        for ia, ib, w in edges:
+            if x[ia] != 0: nxt[ib] += x[ia] * w
+        if pin_core: nxt[idx[core]] = 0.0                     # the seed itself is only moved by direct entry (no feedback onto the seed)
+        x = nxt; total += x
+        if np.abs(x).sum() < min_abs: break
+    return total
+
+
+def interference_flow(G, core_df, core, target, target_df, genes_df=None, max_depth=5, hub_strength=0.25, min_abs=1e-4, min_rel=None):
+    if min_rel is None:
+        from . import data as Dt
+        min_rel = float(Dt.CFG.get("interference", {}).get("min_rel_change", 0.1))
     core_nodes = [core] + [n for n in core_df.node if n != core]
     cset = set(core_nodes)
     sX = dict(zip(target_df.node, target_df.sign)); sX[target] = 1
@@ -51,47 +77,49 @@ def interference_flow(G, core_df, core, target, target_df, genes_df=None, max_de
             entry_edges.append(dict(from_node=u, to_node=v, hops_target_to_from=hX[u], sign_target_to_from=int(sX[u]), edge_effect=int(eff),
                                     weight=round(d["weight"], 3), mechanism=d.get("mechanism", ""), residue=d.get("residue", ""), db=d.get("source", ""),
                                     effect_of_target_inhibition_on_to=int(np.sign(val)), entry_strength=round(val, 4)))
-    # 2) propagate inside the CORE network along CORE's own edges
+    # 2) propagate inside the CORE network along CORE's own edges; the same operator with a unit at CORE = baseline flow
     idx = {n: i for i, n in enumerate(core_nodes)}; N = len(core_nodes)
     x0 = np.zeros(N)
     for v, val in entry.items(): x0[idx[v]] = val
-    total = x0.copy(); x = x0.copy()
-    for _ in range(max_depth):
-        nxt = np.zeros(N)
-        for a, b, d in G.edges(data=True):
-            if a in idx and b in idx and d["effect"] != 0 and x[idx[a]] != 0:
-                nxt[idx[b]] += x[idx[a]] * d["effect"] * d["weight"] * pen.get(b, 1.0)
-        nxt[idx[core]] = 0.0 if core not in entry else nxt[idx[core]]       # the seed itself is only moved by direct entry
-        x = nxt; total += x
-        if np.abs(x).sum() < min_abs: break
+    # unit perturbation: the raw entries are scaled to total mass 1 so that the perturbation and CORE's own unit signal (baseline below)
+    # are in the same units; the raw total (entry_mass) is reported separately as TARGET's mechanistic footprint
+    entry_mass = float(np.abs(x0).sum())
+    if entry_mass > 0: x0 = x0 / entry_mass
+    total = _propagate(G, core_nodes, idx, pen, x0, core, max_depth, min_abs, pin_core=core not in entry)
+    b0 = np.zeros(N); b0[idx[core]] = 1.0
+    base = np.abs(_propagate(G, core_nodes, idx, pen, b0, core, max_depth, min_abs, pin_core=True))
+    base[idx[core]] = 1.0
     rows = []
     hC = dict(zip(core_df.node, core_df.hops)); hC[core] = 0
     end = dict(zip(core_df.node, core_df.is_endpoint)); end[core] = False
     for n in core_nodes:
-        dlt = float(total[idx[n]])
+        dlt = float(total[idx[n]]); bf = float(base[idx[n]])
+        rel = dlt / bf if bf >= min_abs else 0.0
         direct = n in entry
-        direction = "unchanged" if abs(dlt) < min_abs else "decreased" if dlt < 0 else "increased"
-        rows.append(dict(node=n, hops_from_core=hC.get(n, 0), is_tf=bool(end.get(n, False)), delta=round(dlt, 4), direction=direction,
-                         entry="direct" if direct else ("propagated" if abs(dlt) >= min_abs else ""), via=";".join(sorted(via.get(n, ()))),
+        changed = abs(rel) >= min_rel
+        direction = "unchanged" if not changed else "decreased" if rel < 0 else "increased"
+        rows.append(dict(node=n, hops_from_core=hC.get(n, 0), is_tf=bool(end.get(n, False)), delta=round(dlt, 4), baseline_flow=round(bf, 4),
+                         delta_rel=round(rel, 4), direction=direction,
+                         entry="direct" if direct else ("propagated" if changed else ""), via=";".join(sorted(via.get(n, ()))),
                          entry_strength=round(entry.get(n, 0.0), 4)))
     nodes = pd.DataFrame(rows)
-    nodes["abs_delta"] = nodes.delta.abs()
+    nodes["abs_delta"] = nodes.delta_rel.abs()
     nodes = nodes.sort_values(["abs_delta", "hops_from_core"], ascending=[False, True]).drop(columns="abs_delta").reset_index(drop=True)
     genes = pd.DataFrame()
     if genes_df is not None and len(genes_df):
-        dmap = dict(zip(nodes.node, nodes.delta))
+        dmap = dict(zip(nodes.node, nodes.delta_rel.where(nodes.direction != "unchanged", 0.0)))
         g = genes_df.copy()
         g["delta_tf"] = g.tf.map(dmap).fillna(0.0)
         g["delta"] = (g.delta_tf * g.mor).round(4)
-        g["direction"] = g.delta.map(lambda v: "unchanged" if abs(v) < min_abs else "down" if v < 0 else "up")
+        g["direction"] = g.delta.map(lambda v: "unchanged" if v == 0 else "down" if v < 0 else "up")
         genes = g[g.delta != 0].groupby("gene", as_index=False).agg(delta=("delta", "sum"), via_tfs=("tf", lambda s: ";".join(sorted(set(s)))))
         genes["direction"] = genes.delta.map(lambda v: "down" if v < 0 else "up")
         genes = genes.reindex(genes.delta.abs().sort_values(ascending=False).index).reset_index(drop=True)
     edges = pd.DataFrame(entry_edges)
     if len(edges): edges = edges.reindex(edges.entry_strength.abs().sort_values(ascending=False).index).reset_index(drop=True)
     n_tf = int(nodes.is_tf.sum()); ch = nodes[(nodes.is_tf) & (nodes.direction != "unchanged")]
-    tfd = nodes[nodes.is_tf].delta; d_down = abs(float(tfd[tfd < 0].sum())); d_up = float(tfd[tfd > 0].sum())
-    summary = dict(core=core, target=target, core_nodes=N - 1, core_tfs=n_tf, entry_points=len(entry), entry_edges=len(edges),
+    tfd = ch.delta_rel; d_down = abs(float(tfd[tfd < 0].sum())); d_up = float(tfd[tfd > 0].sum())
+    summary = dict(core=core, target=target, core_nodes=N - 1, core_tfs=n_tf, entry_points=len(entry), entry_edges=len(edges), entry_mass=round(entry_mass, 3),
                    nodes_changed=int((nodes.direction != "unchanged").sum()), nodes_decreased=int((nodes.direction == "decreased").sum()),
                    nodes_increased=int((nodes.direction == "increased").sum()), tfs_changed=len(ch),
                    tfs_decreased=int((ch.direction == "decreased").sum()), tfs_increased=int((ch.direction == "increased").sum()),
@@ -100,7 +128,7 @@ def interference_flow(G, core_df, core, target, target_df, genes_df=None, max_de
                    flow_change_index=round(len(ch) / n_tf, 3) if n_tf else 0.0,
                    tf_delta_down=round(d_down, 3), tf_delta_up=round(d_up, 3), net_tf_delta=round(d_up - d_down, 3),
                    net_direction=round((d_up - d_down) / (d_up + d_down), 2) if (d_up + d_down) else 0.0,
-                   target_in_core_network=target in cset)
+                   target_in_core_network=target in cset, min_rel_change=min_rel)
     return dict(nodes=nodes, genes=genes, edges=edges, summary=summary)
 
 
@@ -110,8 +138,8 @@ def screen_targets(G, core, core_df, core_genes, targets, tfs, max_depth=5, min_
     Rank candidate TARGETs by how much their inhibition changes the CORE network (the CORE network is computed once).
     Per target: the TARGET walk with CORE removed (same thresholds), then interference_flow. Score axes:
       flow_change_index  fraction of CORE's TFs whose activity changes
-      tf_delta_total     sum of |delta| over CORE's TFs (magnitude of the transcriptional change; relative units)
-      direct_entries     CORE nodes receiving a direct edge from TARGET's side (mechanistic footprint)
+      tf_delta_total     sum of |delta_rel| over CORE's changed TFs (relative change of CORE-driven flow; 1.0 = one TF fully silenced)
+      direct_entries     CORE nodes receiving a direct edge from TARGET's side (mechanistic footprint); entry_mass = raw summed entry strength
       tf_delta_down/up   signed parts of that total (sum of decreases / sum of increases at the TFs); net_tf_delta = up - down;
                          net_direction = (up - down)/(up + down): -1 = inhibition silences CORE output, +1 = it raises it (brake release)
       down_share         share of changed TFs that go DOWN
@@ -133,9 +161,9 @@ def screen_targets(G, core, core_df, core_genes, targets, tfs, max_depth=5, min_
         res = interference_flow(G, core_df, core, X, dX, genes_df=core_genes, max_depth=max_depth, hub_strength=hub_strength)
         s_ = res["summary"]; nd = res["nodes"]; tf = nd[nd.is_tf]
         ch = tf[tf.direction != "unchanged"]
-        d_down = abs(float(tf.delta[tf.delta < 0].sum())); d_up = float(tf.delta[tf.delta > 0].sum())
+        d_down = abs(float(ch.delta_rel[ch.delta_rel < 0].sum())); d_up = float(ch.delta_rel[ch.delta_rel > 0].sum())
         row = dict(target=X, target_nodes=len(dX), entry_points=s_["entry_points"], entry_edges=s_["entry_edges"],
-                   direct_entries=int((nd.entry == "direct").sum()), nodes_changed=s_["nodes_changed"],
+                   direct_entries=int((nd.entry == "direct").sum()), entry_mass=s_["entry_mass"], nodes_changed=s_["nodes_changed"],
                    tfs_changed=s_["tfs_changed"], tfs_down=s_["tfs_decreased"], tfs_up=s_["tfs_increased"], flow_change_index=s_["flow_change_index"],
                    tf_delta_total=round(d_down + d_up, 3), tf_delta_down=round(d_down, 3), tf_delta_up=round(d_up, 3), net_tf_delta=round(d_up - d_down, 3),
                    net_direction=round((d_up - d_down) / (d_up + d_down), 2) if (d_up + d_down) else float("nan"),

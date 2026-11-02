@@ -46,14 +46,14 @@ CAPTIONS = {
   "LINES   thin grey curve = signaling edge (▶ activation, ┃ inhibition, dotted = unknown sign). NODES black diamond = CORE · blue = TF · grey = intermediate; outline green = activated by CORE, red = inhibited.",
   "GENES   count under each TF = DoRothEA target genes (↑ induced / ↓ repressed by CORE); hover for the list. Per-hop node cap applies (view: max_nodes); tables hold everything."],
  "cell_flow_targets": [
-  "TARGETS  the CORE network (grey, cross-section layout) with the screened candidates as diamonds: size = Σ|delta| at the CORE TFs when the candidate is inhibited (interference screen), colour = net direction (blue = silences CORE output, red = raises it / brake release, grey = balanced); label = rank.",
+  "TARGETS  the CORE network (grey, cross-section layout) with the screened candidates as diamonds: size = Σ|relative change| at the CORE TFs when the candidate is inhibited (interference screen), colour = net direction (blue = silences CORE output, red = raises it / brake release, grey = balanced); label = rank.",
   "PLACE    a candidate inside the CORE network sits at its own node; one outside stands in the left margin at the height of its strongest entry node; thin brown lines = its top-3 entry nodes. Hover for the score columns. Table: interference_screen.csv."],
  "cell_flow_overlap": [
   "OVERLAP  the CORE network (layout as in the cross-section view) with the TARGET network, computed with the SAME walk, laid over it: purple = node reached by both (shared), tan = CORE node receiving an edge from the TARGET network, grey = CORE only.",
   "MARGIN   orange nodes on the left = TARGET (diamond) and TARGET-network nodes outside the CORE network that act on it; brown straight edges = those actions (hover the midpoint for mechanism / residue). Tables: overlap_nodes.csv, overlap_edges.csv; the TARGET network itself: cell_flow_target.html.",
   "READ     shared nodes and tan nodes are WHERE the two pathways meet; the inhibition view says in WHICH DIRECTION the flow changes there."],
  "cell_flow_pert": [
-  "PERTURBATION  the same CORE network, coloured by the predicted change when the TARGET is INHIBITED: blue = activity decreases, red = increases, grey = unchanged; size ∝ |delta|; black outline = direct entry point.",
+  "PERTURBATION  the same CORE network, coloured by the predicted change when the TARGET is INHIBITED: blue = activity decreases, red = increases, grey = unchanged (|relative change| below interference.min_rel_change); size ∝ |relative change| of the CORE-driven flow; black outline = direct entry point.",
   "ENTRY   orange nodes in the left margin = TARGET (diamond) and the TARGET-side nodes that act on the CORE network; their straight edges are blue (receiving node decreases) or red (increases). Hover an edge midpoint for mechanism / residue.",
   "FLOW    the change then propagates along CORE's own signed edges (multiplying effects and weights), so a node far from any entry point can still be coloured. Under each TF: how many DoRothEA genes go down/up. Tables: flow_change.csv, flow_change_genes.csv, entry_edges.csv.",
   "CAVEAT  magnitudes are relative within one run (no units) and assume the databases' context-free edges; signs at entry points are the trustworthy part."],
@@ -547,7 +547,7 @@ def cell_flow_figure(json_path, width=1100, height=820, max_nodes=None, focus=No
     rad = lambda nid: 2.0 if byid[nid]["cls"] == "seed" else 0.9 + 1.3 * byid[nid].get("score", 0.5)
     title = f"{F['seed']} network as a cell cross-section — {F.get('subtitle', '')}"
     if targets_mode:
-        title = f"candidate targets scored on the {F['seed']} network — {len(pert['targets'])} candidates; marker size = Σ|delta| at TFs when inhibited, colour = net direction"
+        title = f"candidate targets scored on the {F['seed']} network — {len(pert['targets'])} candidates; marker size = Σ|relative change| at TFs when inhibited, colour = net direction"
     elif overlap:
         so = pert["summary"]
         title = f"overlap of the {pert['target']} network on the {F['seed']} network — shared {so['shared_nodes']} nodes ({so['shared_tfs']} TFs), Jaccard {so['jaccard']}, {so['edges_into_core']} edges from {pert['target']}'s network into {F['seed']}'s"
@@ -586,7 +586,7 @@ def cell_flow_figure(json_path, width=1100, height=820, max_nodes=None, focus=No
                                  text=[f"<b>{t['target']}</b> #{t['rank']}" for t in T], textposition=["middle left" if pos[t["target"]][0] < 10 else "top center" for t in T],
                                  textfont=dict(size=10, color="#1A1A1A"),
                                  marker=dict(size=[10 + 26 * min(1.0, t["score"] / vmax) for t in T], color=[tcol(t) for t in T], symbol="diamond", opacity=0.85, line=dict(color="#111", width=1.2)),
-                                 hovertext=[f"<b>{t['target']}</b> rank {t['rank']} (composite {t['composite']})<br>Σ|delta| at TFs {t['score']:.2f} (down {t.get('down', 0):.2f} / up {t.get('up', 0):.2f}), net direction {t.get('net_direction')}"
+                                 hovertext=[f"<b>{t['target']}</b> rank {t['rank']} (composite {t['composite']})<br>Σ|rel. change| at TFs {t['score']:.2f} (down {t.get('down', 0):.2f} / up {t.get('up', 0):.2f}), net direction {t.get('net_direction')}"
                                             f"<br>TFs changed {t.get('tfs_changed')} · direct entries {t.get('direct_entries')} · z {t.get('baseline_z')}"
                                             + (f"<br>{'in the ' + F['seed'] + ' network' if t['target'] in {n['id'] for n in nodes} else 'outside the network (margin)'}")
                                             + (f"<br>entry nodes: {', '.join(t.get('entries', [])[:6])}" if t.get("entries") else "") for t in T],
@@ -632,12 +632,12 @@ def cell_flow_figure(json_path, width=1100, height=820, max_nodes=None, focus=No
         def phover(n):
             d = P.get(n["id"]); base = hover(n)
             if not d or abs(d["delta"]) < 1e-4: return base + f"<br><b>unchanged by {pert['target']} inhibition</b>"
-            return base + (f"<br><b>{d['direction'].upper()} when {pert['target']} is inhibited</b> (delta {d['delta']:+.3f}; {d['entry']}"
+            return base + (f"<br><b>{d['direction'].upper()} when {pert['target']} is inhibited</b> (relative change {d['delta']:+.1%}; {d['entry']}"
                            + (f", via {d['via']}" if d.get("via") else "") + ")")
         pline = lambda n: "#9A4B00" if n["id"] == pert["target"] else ("#111" if P.get(n["id"], {}).get("entry") == "direct" else ("#555" if n.get("is_endpoint") else "#aaa"))
         _node_trace(fig, [seed], pos, prad, lambda n: COL["seed"] if abs(P.get(n["id"], {}).get("delta", 0.0)) < 1e-4 else pcol(n), lambda n: "#111", phover, "CORE")
         _node_trace(fig, [n for n in nodes if n is not seed], pos, prad, pcol, pline, phover,
-                    f"CORE-network node: blue = decreased, red = increased when {pert['target']} is inhibited, grey = unchanged; black outline = direct entry point; size = |delta|", line_w=1.6, label_size=9)
+                    f"CORE-network node: blue = decreased, red = increased when {pert['target']} is inhibited, grey = unchanged; black outline = direct entry point; size = |relative change|", line_w=1.6, label_size=9)
         # TARGET-side entry nodes in the left margin, at the height of their first target; entry edges in the change colour
         ent = [e for e in pert["edges"] if e["to_node"] in pos and e["effect_of_target_inhibition_on_to"] != 0]   # zero entries carry no direction
         srcs = sorted({e["from_node"] for e in ent if e["from_node"] not in pos}, key=lambda u: -max(abs(e["entry_strength"]) for e in ent if e["from_node"] == u))
@@ -741,12 +741,12 @@ def interference_screen_figure(table_path, width=900, height=600, caption=True, 
     fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers", marker=dict(size=22, color="#fff", line=dict(color="#333", width=1)), name="size = direct entry points · label = net direction (−1…+1)"))
     xmax = max(0.2, float(tab.flow_change_index.max()) * 1.2); ymax = max(0.5, float(tab.tf_delta_total.max()) * 1.2)
     fig.update_xaxes(visible=True, showticklabels=True, title="flow-change index (fraction of CORE TFs changed)", showgrid=True, gridcolor="#eee", zeroline=False, range=[-0.03 * xmax, xmax], linecolor="#999")
-    fig.update_yaxes(visible=True, showticklabels=True, title="total |delta| at CORE TFs (relative units)", showgrid=True, gridcolor="#eee", zeroline=False, range=[-0.05 * ymax, ymax], linecolor="#999")
+    fig.update_yaxes(visible=True, showticklabels=True, title="Σ |relative change| at CORE TFs (1.0 = one TF fully silenced)", showgrid=True, gridcolor="#eee", zeroline=False, range=[-0.05 * ymax, ymax], linecolor="#999")
     fig.update_layout(showlegend=True, legend=dict(orientation="h", y=-0.18))
     if caption:
         fig.add_annotation(xref="paper", yref="paper", x=0, y=-0.3, showarrow=False, align="left", font=dict(size=10, color="#555"),
                            text="Each point = one candidate TARGET whose inhibition was propagated through the CORE network (pathway-interference model). Table: interference_screen.csv "
-                                "(composite = mean percentile of index, |delta|, direct entries; baseline_z vs degree-matched random genes). Magnitudes are relative within the run.")
+                                "(composite = mean percentile of index, Σ|relative change|, direct entries; baseline_z vs degree-matched random genes). Relative change = delta / CORE baseline flow at the TF; a TF counts as changed above interference.min_rel_change.")
         fig.update_layout(margin=dict(b=150))
     return fig
 

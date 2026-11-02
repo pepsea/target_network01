@@ -100,6 +100,13 @@ crosstalk:
   min_sign_confidence: 0.5      # endpoints count as synergistic/antagonistic only when both signs are at least this confident
 
 # ---- synthetic lethality (sl mode / research_gene) --------------------------------------------------------
+# pathway interference / interference screen (notebooks/pathway_interference.ipynb, interference_screen.ipynb)
+interference:
+  min_rel_change: 0.1           # a CORE node counts as 'changed' when |delta / baseline_flow| >= 10 %. The 'TARGET inhibited' perturbation
+                                # is scaled to one unit before propagation and baseline_flow is one unit of CORE's own signal propagated
+                                # the same way, so delta_rel compares like with like. Without this gate every node of a large live
+                                # network is 'changed' and flow_change_index is 1.0 for every candidate. 0.05 = lenient, 0.2 = strict.
+
 sl:
   min_lost: 20                  # minimum cell lines with likely loss of the seed (else expression fallback, else skipped)
   padj: 0.05                    # BH-FDR threshold
