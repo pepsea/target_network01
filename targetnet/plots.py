@@ -732,6 +732,7 @@ def interference_screen_figure(table_path, width=900, height=600, caption=True, 
     hv = [f"<b>{r.target}</b> rank {r['rank']}<br>TFs changed {r.tfs_changed} ({r.tfs_down}↓ {r.tfs_up}↑), index {r.flow_change_index}<br>|delta| at TFs {r.tf_delta_total}"
           + (f" (down {r.tf_delta_down}, up {r.tf_delta_up}, net {r.net_tf_delta:+.2f}, direction {r.net_direction:+.2f})" if "net_tf_delta" in tab.columns and pd.notna(r.net_direction) else "")
           + f"<br>direct entries {r.direct_entries}, entry edges {r.entry_edges}<br>genes {r.genes_down}↓ {r.genes_up}↑"
+          + (f"<br>necessity {r.necessity_index} ({r.tfs_lost} TFs lost) · {r['class']}" if "necessity_index" in tab.columns else "")
           + (f"<br>baseline z {r.baseline_z:+.2f}" if pd.notna(r.get("baseline_z", float("nan"))) else "") + f"<br>{r.top_tfs}" for _, r in tab.iterrows()]
     DIV = [[0.0, "#3a6fb0"], [0.5, "#bdbdbd"], [1.0, "#c0392b"]]
     fig.add_trace(go.Scatter(x=tab.flow_change_index, y=tab.tf_delta_total, mode="markers+text", text=txt, textposition="top center", textfont=dict(size=10),
@@ -748,6 +749,41 @@ def interference_screen_figure(table_path, width=900, height=600, caption=True, 
                            text="Each point = one candidate TARGET whose inhibition was propagated through the CORE network (pathway-interference model). Table: interference_screen.csv "
                                 "(composite = mean percentile of index, Σ|relative change|, direct entries; baseline_z vs degree-matched random genes). Relative change = delta / CORE baseline flow at the TF; a TF counts as changed above interference.min_rel_change.")
         fig.update_layout(margin=dict(b=150))
+    return fig
+
+
+def necessity_figure(table_path, width=900, height=620, caption=True, label_top=30):
+    """Bottleneck or parallel input? x = necessity index (fraction of CORE TFs that lose their route when the TARGET is removed: can an
+    inhibitor BLOCK the output), y = flow-change index (linear amplitude: how much of the output is modulated), size = Σ|relative change|,
+    fill = net direction. Top-right = bottleneck; top-left = parallel/redundant input (EGFR on the FGFR trunk); bottom = little effect."""
+    tab = pd.read_csv(table_path) if isinstance(table_path, str) else table_path
+    core = tab.attrs.get("core", "") if hasattr(tab, "attrs") else ""
+    if not len(tab) or "necessity_index" not in tab.columns: return _base("necessity view: no targets scored", width, height)
+    fig = _base(f"can inhibiting the candidate BLOCK the {core or 'CORE'} output? necessity (route loss) vs amplitude (linear flow change)", width, height)
+    nd = tab["net_direction"].fillna(0.0) if "net_direction" in tab.columns else pd.Series(0.0, index=tab.index)
+    size = 9 + 14 * (tab.tf_delta_total / max(1e-9, float(tab.tf_delta_total.max()))).clip(0, 1)
+    txt = [r.target if r["rank"] <= label_top else "" for _, r in tab.iterrows()]
+    hv = [f"<b>{r.target}</b> rank {r['rank']}<br>{r['class']}<br>necessity {r.necessity_index} ({r.tfs_lost} TFs lost, {r.tfs_weakened} weakened; route score loss {r.route_score_loss})"
+          f"<br>flow-change index {r.flow_change_index}, Σ|rel. change| {r.tf_delta_total}, net direction {r.net_direction:+.2f}" if pd.notna(r.net_direction) else
+          f"<b>{r.target}</b> rank {r['rank']}<br>{r['class']}<br>necessity {r.necessity_index}" for _, r in tab.iterrows()]
+    DIV = [[0.0, "#3a6fb0"], [0.5, "#bdbdbd"], [1.0, "#c0392b"]]
+    # quadrant guides
+    for x0, y0, x1, y1, col, lab in [(0.2, 0.2, 1.05, 1.05, "#e9f2e5", "BOTTLENECK  inhibition blocks CORE output"),
+                                     (-0.03, 0.2, 0.2, 1.05, "#f3eee4", "PARALLEL INPUT  amplitude down, CORE route intact (redundant)"),
+                                     (-0.03, -0.03, 1.05, 0.2, "#f4f4f4", "little effect on CORE output")]:
+        fig.add_shape(type="rect", x0=x0, y0=y0, x1=x1, y1=y1, fillcolor=col, line=dict(width=0), layer="below")
+        fig.add_annotation(x=(x0 + x1) / 2, y=y1 - 0.03, text=lab, showarrow=False, font=dict(size=10, color="#666"))
+    fig.add_trace(go.Scatter(x=tab.necessity_index, y=tab.flow_change_index, mode="markers+text", text=txt, textposition="top center", textfont=dict(size=10),
+                             marker=dict(size=size, color=nd, colorscale=DIV, cmin=-1, cmax=1, showscale=True, line=dict(color="#333", width=1),
+                                         colorbar=dict(title=dict(text="net direction", side="right", font=dict(size=10)), tickvals=[-1, 0, 1], ticktext=["−1 output down", "0 balanced", "+1 output up"], tickfont=dict(size=9), len=0.55, thickness=12, x=1.02)),
+                             hovertext=hv, hoverinfo="text", showlegend=False))
+    fig.update_xaxes(visible=True, showticklabels=True, title="necessity index (fraction of CORE TFs that lose their route without the candidate)", showgrid=False, zeroline=False, range=[-0.03, 1.05], linecolor="#999")
+    fig.update_yaxes(visible=True, showticklabels=True, title="flow-change index (fraction of CORE TFs whose flow changes ≥ threshold)", showgrid=False, zeroline=False, range=[-0.03, 1.05], linecolor="#999")
+    if caption:
+        fig.add_annotation(xref="paper", yref="paper", x=0, y=-0.16, showarrow=False, align="left", font=dict(size=10, color="#555"),
+                           text="necessity = CORE walked again with the candidate removed (Boolean / OR view: a TF stays active while any route from CORE remains). amplitude = linear propagation of the "
+                                "'candidate inhibited' perturbation. A high-amplitude, zero-necessity candidate (EGFR on the FGFR3 trunk) feeds the same trunk in parallel: an inhibitor lowers the input but does not block the route. Table: interference_screen.csv, route_loss_<gene>.csv")
+        fig.update_layout(margin=dict(b=110))
     return fig
 
 

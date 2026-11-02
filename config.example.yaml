@@ -106,6 +106,10 @@ interference:
                                 # is scaled to one unit before propagation and baseline_flow is one unit of CORE's own signal propagated
                                 # the same way, so delta_rel compares like with like. Without this gate every node of a large live
                                 # network is 'changed' and flow_change_index is 1.0 for every candidate. 0.05 = lenient, 0.2 = strict.
+  weak_ratio: 0.5               # route dependency (necessity): CORE is walked again with TARGET removed; a CORE TF counts as 'weakened' when
+                                # its best-path score falls below this fraction of the original ('lost' = no route at all). necessity_index =
+                                # (lost + weakened) / CORE TFs. Separates a bottleneck (MEK for FGFR3) from a parallel input (EGFR: amplitude
+                                # high, necessity 0 -> an EGFR inhibitor does not block the FGFR route).
 
 sl:
   min_lost: 20                  # minimum cell lines with likely loss of the seed (else expression fallback, else skipped)

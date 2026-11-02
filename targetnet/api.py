@@ -217,6 +217,7 @@ def research_pathway_interference(core, target, **options):
     root = a.run_dir; out = f"{root}/interference"
     return dict(core=cli.resolve_symbol(core), target=cli.resolve_symbol(target), run_dir=root, summary=json.load(open(f"{out}/summary.json")),
                 flow_change=_read(f"{out}/flow_change.csv"), flow_change_genes=_read(f"{out}/flow_change_genes.csv"), entry_edges=_read(f"{out}/entry_edges.csv"),
+                route_dependency=_read(f"{out}/route_dependency.csv"),
                 core_nodes=_read(f"{root}/downstream/downstream_nodes.csv"), core_tfs=_read(f"{root}/downstream/transcription_factors.csv"),
                 target_genes=_read(f"{root}/downstream/target_genes.csv"),
                 overlap_nodes=_read(f"{out}/overlap_nodes.csv"), overlap_edges=_read(f"{out}/overlap_edges.csv"),
@@ -235,6 +236,9 @@ def summarize_pathway_interference(p, n=12):
              f"change: {s['nodes_changed']} nodes ({s['nodes_decreased']} down / {s['nodes_increased']} up); TFs {s['tfs_changed']}/{s['core_tfs']} "
              f"({s['tfs_decreased']} down / {s['tfs_increased']} up; Σdelta down {s.get('tf_delta_down', 0)}, up {s.get('tf_delta_up', 0)}, net direction {s.get('net_direction', 0):+.2f}); "
              f"genes {s['genes_down']} down / {s['genes_up']} up; flow-change index {s['flow_change_index']}"]
+    if "necessity_index" in s:
+        lines.append(f"necessity ({p['core']} walked without {p['target']}): {s['tfs_lost']}/{s['core_tfs']} TFs lose their route, {s['tfs_weakened']} weakened "
+                     f"-> necessity index {s['necessity_index']}, route score loss {s['route_score_loss']}  =>  {s['class']}")
     if len(fc):
         tf = fc[(fc.is_tf) & (fc.direction != "unchanged")].head(n)
         if len(tf): lines.append("TFs most changed: " + ", ".join(f"{r.node}({'↓' if r.delta < 0 else '↑'}{abs(r.delta):.2f})" for r in tf.itertuples()))
@@ -255,7 +259,17 @@ def screen_interference(core, targets, **options):
         if f.startswith("flow_change_") and f.endswith(".csv"): per[f[len("flow_change_"):-4]] = _read(f"{out}/{f}")
     return dict(core=cli.resolve_symbol(core), table=tab, baseline=_read(f"{out}/baseline_random.csv"), run_dir=a.run_dir,
                 view=f"{out}/interference_screen.html", views=dict(screen=f"{out}/interference_screen.html", direction=f"{out}/interference_direction.html",
-                                                                     core_map=f"{out}/core_map_targets.html"), per_target=per)
+                                                                     core_map=f"{out}/core_map_targets.html", necessity=f"{out}/interference_necessity.html"), per_target=per)
+
+
+def necessity_figure(x, **kw):
+    """Bottleneck vs parallel input: x = necessity index (route loss), y = flow-change index (amplitude) for an interference screen
+    result (dict from screen_interference, its table, or the csv path)."""
+    from . import plots
+    tab = x["table"] if isinstance(x, dict) else x
+    if isinstance(tab, str): tab = pd.read_csv(tab)
+    if isinstance(x, dict) and "core" in x: tab.attrs["core"] = x["core"]
+    return plots.necessity_figure(tab, **kw)
 
 
 def interference_screen_figure(x, **kw):

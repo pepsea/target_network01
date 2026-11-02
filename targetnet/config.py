@@ -43,7 +43,7 @@ DEFAULTS = {
              "through_tf": True, "score_mode": "relative"},
     "view": {"max_nodes": 150, "max_nodes_crosstalk": 120, "max_edges_crosstalk": 40, "rows_per_column": 28},   # figure budgets only; tables are never capped
     "crosstalk": {"max_depth": 3, "min_score": 0.4, "min_sign_confidence": 0.5},   # local walks: cross-talk is proximal interference (plot budget -> view.max_edges_crosstalk)
-    "interference": {"min_rel_change": 0.1},    # a CORE node counts as changed when |delta / baseline_flow| >= this (10 %); gates flow_change_index
+    "interference": {"min_rel_change": 0.1, "weak_ratio": 0.5},    # a CORE node counts as changed when |delta / baseline_flow| >= this (10 %); gates flow_change_index
     "sl":   {"min_lost": 20, "padj": 0.05, "delta": 0.15},
 }
 

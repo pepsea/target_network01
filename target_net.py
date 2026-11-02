@@ -329,6 +329,13 @@ def run_pathway_interference(args):
                         stop_at_endpoints=not bool(D.CFG.get("walk", {}).get("through_tf", True)),
                         score_mode=D.CFG.get("walk", {}).get("score_mode", "relative")) if X in H else Wk.EMPTY_WALK.copy()
     res = I.interference_flow(G, dC, C, X, dX, genes_df=gC, max_depth=args.max_depth, hub_strength=args.hub_penalty)
+    # step 5: necessity test - CORE walked again WITHOUT X: which CORE TFs lose their route? (parallel input vs bottleneck)
+    w_ = D.CFG.get("walk", {})
+    dep = I.route_dependency(G, C, dC, X, tfs, args.max_depth, args.min_score, args.hub_penalty, bool(w_.get("through_tf", True)), w_.get("score_mode", "relative"))
+    dep["table"].to_csv(os.path.join(out, "route_dependency.csv"), index=False)
+    res["summary"].update({k: v for k, v in dep["summary"].items() if k != "core_tfs"})
+    res["summary"]["class"] = I.classify_target(dep["summary"]["necessity_index"], res["summary"]["flow_change_index"], res["summary"]["net_direction"])
+    res["route"] = dep["table"]
     res["nodes"].to_csv(os.path.join(out, "flow_change.csv"), index=False)
     res["edges"].to_csv(os.path.join(out, "entry_edges.csv"), index=False)
     res["genes"].to_csv(os.path.join(out, "flow_change_genes.csv"), index=False)
@@ -347,6 +354,8 @@ def run_pathway_interference(args):
           f"({s_['tfs_decreased']} down / {s_['tfs_increased']} up; Σdelta down {s_['tf_delta_down']}, up {s_['tf_delta_up']}, net direction {s_['net_direction']:+.2f}); "
           f"genes {s_['genes_down']} down / {s_['genes_up']} up; flow-change index {s_['flow_change_index']} (TFs with |relative change| >= {s_['min_rel_change']:.0%})"
           + (f"; {X} is itself on the {C} network" if s_['target_in_core_network'] else ""))
+    print(f"[necessity] {C} walked without {X}: {s_['tfs_lost']} of {s_['core_tfs']} TFs lose their route, {s_['tfs_weakened']} keep only a poorer one "
+          f"(necessity index {s_['necessity_index']}, route score loss {s_['route_score_loss']}) -> {s_['class']}")
     if len(res["nodes"]):
         print(res["nodes"][res["nodes"].direction != "unchanged"].head(12)[["node", "hops_from_core", "is_tf", "baseline_flow", "delta", "delta_rel", "direction", "entry", "via"]].to_string(index=False))
     return res
@@ -368,6 +377,8 @@ def run_interference_screen(args):
     if len(res["baseline"]): res["baseline"].to_csv(os.path.join(out, "baseline_random.csv"), index=False)
     for X, r in res["details"].items():
         nd = r["nodes"]; nd[nd.direction != "unchanged"].to_csv(os.path.join(out, f"flow_change_{X}.csv"), index=False)
+        if "route" in r and len(r["route"]) and (r["route"].status != "kept").any():
+            r["route"][r["route"].status != "kept"].to_csv(os.path.join(out, f"route_loss_{X}.csv"), index=False)
     # the scores on the 2-D map: CORE cross-section with the candidates as scored diamonds
     cell = json.load(open(os.path.join(root, "downstream", "flow.json")))
     for n in cell["nodes"]: n.setdefault("compartment", "cytosol")
@@ -387,8 +398,9 @@ def run_interference_screen(args):
                                 f"direction of change in the {C} network when each candidate is inhibited", unit="Σ |relative change| at TFs",
                                 caption_text="Per candidate: blue = sum of TF decreases, red = sum of TF increases when it is inhibited. Both large = context-dependent (feedback). Table: interference_screen.csv (tf_delta_down / tf_delta_up / net_tf_delta / net_direction).",
                                 extra_cols=("tfs_down", "tfs_up", "net_direction", "baseline_z")).write_html(os.path.join(out, "interference_direction.html"), include_plotlyjs="cdn")
+        P.necessity_figure(tab).write_html(os.path.join(out, "interference_necessity.html"), include_plotlyjs="cdn")
         print(f"\n[iscreen] ranked {len(tab)} targets -> {out}/interference_screen.csv")
-        print(tab.head(15)[["rank", "target", "tfs_changed", "tfs_down", "tfs_up", "flow_change_index", "tf_delta_down", "tf_delta_up", "net_direction", "direct_entries", "baseline_z", "composite"]].to_string(index=False))
+        print(tab.head(15)[["rank", "target", "necessity_index", "tfs_lost", "flow_change_index", "tf_delta_down", "tf_delta_up", "net_direction", "direct_entries", "baseline_z", "composite", "class"]].to_string(index=False))
     return tab
 
 
