@@ -569,7 +569,7 @@ def check_config(cfg):
             f = D.depmap_file(os.path.expanduser(d), kind)
             print(f"  {kind:<11}{use:<46}{'ok' if f else 'MISSING':<9}{human(os.path.getsize(f)) if f else '':<10}{os.path.basename(f) if f else ''}")
     print(f"\nstring        : API only (min_score {Cf.db(cfg,'string','min_score')}) -> {'used' if dl else 'skipped (offline)'}")
-    print(f"walk          : {cfg['walk']}\ncrosstalk     : {cfg.get('crosstalk')}\nsl            : {cfg['sl']}\nview          : {cfg.get('view')}")
+    print(f"walk          : {cfg['walk']}\ncrosstalk     : {cfg.get('crosstalk')}\ninterference  : {cfg.get('interference')}\nsl            : {cfg['sl']}\nview          : {cfg.get('view')}")
 
 
 def signor_lookup(gene, cfg):
