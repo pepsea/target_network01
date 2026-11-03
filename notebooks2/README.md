@@ -89,7 +89,7 @@ mkdir -p ~/Documents/database/hpa && cd ~/Documents/database/hpa
 curl -L -o rna_tissue_consensus.tsv.zip "https://www.proteinatlas.org/download/tsv/rna_tissue_consensus.tsv.zip" && unzip -o rna_tissue_consensus.tsv.zip
 ```
 - ページ: https://www.proteinatlas.org/about/download → **RNA consensus tissue gene data**。列は `Gene`・`Gene name`・`Tissue`・`nTPM`（約 39 MB、50 組織）。
-- 組織名は `Tissue` 列の値（例: `liver`、`lung`、`kidney`、`heart muscle`、`cerebral cortex`）。`config.yaml` の `tissue.name` に書く。名前が違うと、似た組織名を示して止まる。
+- 組織名は `Tissue` 列の値（全 51 組織）。`config.yaml` の `tissue` の下に一覧を載せてある。`config.yaml` の `tissue.name` に書く。名前が違うと、似た組織名を示して止まる。
 
 ## フォルダの配置
 

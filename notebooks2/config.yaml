@@ -1,10 +1,22 @@
 # notebooks2/flow_view.ipynb の設定ファイル（パラメータとデータベースの場所）。~ は自分のホームに展開される。相対パスはこのフォルダ基準
 
-gene: DRD2 # 標的遺伝子名（HGNC 記号、大文字）。ここを書き換えて、ノートブックを上から実行する
+gene: ACACB # 標的遺伝子名（HGNC 記号、大文字）。ここを書き換えて、ノートブックを上から実行する
 
 tissue: # 組織の発現（flow_view_tissue.ipynb だけが使う）
-  name: cerebral cortex # 組織名（HPA の Tissue 列。例: liver, lung, kidney, heart muscle, cerebral cortex, skeletal muscle）。ここを書き換える
-  min_ntpm: 10 # この発現量（nTPM）未満のタンパク質は、ネットワークから除く（代謝物・低分子は除かない。入力遺伝子は残す）
+  name: kidney # 組織名（HPA の Tissue 列）。ここを書き換える。使える組織名は、すぐ下の一覧（全 51 組織。大文字小文字は問わない）
+  # 使える組織名（HPA の rna_tissue_consensus.tsv の Tissue 列。このうち 1 つを name に書く）:
+  #   adipose tissue, adrenal gland, amygdala, appendix, basal ganglia,
+  #   blood vessel, bone marrow, breast, cerebellum, cerebral cortex,
+  #   cervix, choroid plexus, colon, duodenum, endometrium,
+  #   epididymis, esophagus, fallopian tube, gallbladder, heart muscle,
+  #   hippocampal formation, hypothalamus, kidney, liver, lung,
+  #   lymph node, midbrain, ovary, pancreas, parathyroid gland,
+  #   pituitary gland, placenta, prostate, rectum, retina,
+  #   salivary gland, seminal vesicle, skeletal muscle, skin, small intestine,
+  #   smooth muscle, spinal cord, spleen, stomach, testis,
+  #   thymus, thyroid gland, tongue, tonsil, urinary bladder,
+  #   vagina
+  min_ntpm: 1 # この発現量（nTPM）未満のタンパク質は、ネットワークから除く（代謝物・低分子は除かない。入力遺伝子は残す）
   ref_ntpm: 10 # 辺の係数 f = min(1, log(1+nTPM) / log(1+ref_ntpm))。ref_ntpm 以上の発現で 1。辺の係数は両端の f の幾何平均
   unknown: keep # HPA にないタンパク質: keep（残す。係数 1）/ drop（除く）
 
@@ -36,6 +48,7 @@ license_strict: # OmniPath の記録のライセンス判定。「要ライセ�
 metabolism: # 代謝の辺（Human-GEM）を足す。足さないときは enabled: false
   enabled: true
   max_reactions_per_metabolite: 250 # これより多くの反応に出る代謝物（水・H+・ATP・NADPH・CoA など）は、すべてをつなぐので除く
+  compartments: true # true: 代謝物を区画ごとに別の点にする（[c] 細胞質、[e] 細胞外、[m] ミトコンドリア、[n] 核、[r] 小胞体 など。輸送と細胞小器官の反応が見える）/ false: 区画をまとめる（輸送の反応は消える）
   edge_E: 0.5 # 代謝の辺の証拠 E（固定値。論文数・SIGNOR スコアが無いため）
   edge_weight: 0.5 # 代謝の辺の weight（固定値）
   use_reversible: false # true: 可逆な反応の逆向きの辺も使う（上流・下流が同じ代謝物につながりやすい）
