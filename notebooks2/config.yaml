@@ -49,7 +49,7 @@ license_strict: # OmniPath の記録のライセンス判定。「要ライセ�
 
 regulon: # 入力遺伝子が TF のとき、その TF の標的遺伝子を下流の hop 1 に足す
   enabled: true
-  license: free_source # free_source: 自由に使える一次資源（TRRUST・SIGNOR・ENCODE・IntAct など）が 1 つでもある記録を使う / strict: すべての一次資源が自由なものだけ（現状は 0 件）
+  license: free_source # free_source: 自由に使える一次資源（TRRUST・SIGNOR・ENCODE・IntAct など）が 1 つでもある記録を使う / strict: すべての一次資源が自由なものだけ（現状は 0 件）/ all: ファイルの記録をすべて使う（一次資源のライセンスは確かめない。IKZF1 のように、標的がすべて曖昧な資源だけのときに使う）
   include_repressed: true # false にすると、抑制される標的を除く（促進される標的だけ）
   level_E: {A: 0.8, B: 0.6, C: 0.5, D: 0.4} # DoRothEA の信頼度ごとの辺の証拠 E（自由な一次資源が 1 つ増えるごとに +0.05）
 
