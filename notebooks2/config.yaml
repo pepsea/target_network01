@@ -20,6 +20,8 @@ tissue: # 組織の発現（flow_view_tissue.ipynb だけが使う）
   ref_ntpm: 10 # 辺の係数 f = min(1, log(1+nTPM) / log(1+ref_ntpm))。ref_ntpm 以上の発現で 1。辺の係数は両端の f の幾何平均
   unknown: keep # HPA にないタンパク質: keep（残す。係数 1）/ drop（除く）
 
+tf_regulation: true # TF が遺伝子を誘導する辺を使うか。true: 使う（SIGNOR の「転写の制御」の辺、入力遺伝子が TF のときの DoRothEA / CollecTRI の標的）/ false: すべて使わない（SIGNOR の転写の制御の辺も除く。下の regulon も足さない）
+
 databases:
   signor: # SIGNOR 全データ（CC BY 4.0）
     path: ~/Documents/database/signor/all_data_12_07_26.tsv
@@ -40,7 +42,7 @@ databases:
     names: ~/Documents/database/uniprot/uniprot_human_names.tsv # 遺伝子名（タンパク質名）: 表とホバーに出す。列は Entry・Gene Names (primary)・Protein names（README に取得方法）
   tf_list: # Lambert 2018 の転写因子一覧（ライセンス: 記載なし = 不明。TF の定義にだけ使う）
     path: ~/Documents/database/tf/DatabaseExtract_v_1.01.csv
-  depmap: # DepMap（CC BY 4.0）: CRISPRGeneEffect.csv がある場所。点の大きさ（入力遺伝子との相関）だけに使う
+  depmap: # DepMap（CC BY 4.0）: CRISPRGeneEffect.csv がある場所。入力遺伝子との相関を、点の大きさと（flow_view_depmap.ipynb では）遺伝子の選択に使う
     dir: ~/Documents/database/depmap
 
 license_strict: # OmniPath の記録のライセンス判定。「要ライセンス」と「曖昧」のリソースを 1 つでも含む記録は捨てる

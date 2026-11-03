@@ -7,6 +7,7 @@
 |---|---|
 | `flow_view.ipynb` | 本体。`config.yaml` の一番上の `gene` に標的遺伝子名を入れて、上から順に実行する |
 | `flow_view_tissue.ipynb` | 組織の発現つきの版。`config.yaml` の `tissue.name`（例: liver）で、**発現する遺伝子だけに絞り、辺の重みに発現量（nTPM）をかける** |
+| `flow_view_depmap.ipynb` | DepMap 版。途中の遺伝子を `flow` ではなく、**入力遺伝子との DepMap 相関の絶対値 |r|** の大きい順に選ぶ（祖先も入れて入力遺伝子につなぐ）。入力遺伝子が DepMap にないと止まる |
 | `config.yaml` | 標的遺伝子名・パラメータ・データベースの場所（`tissue:` は組織の版だけが使う） |
 | `focus_demo.txt` | フォーカス遺伝子のデモのリスト（`config.yaml` の `focus.path`） |
 | `results/<日付>/<時刻>_<遺伝子名>/` | 実行ごとの出力: 図（`.png`・`.html`）、遺伝子の表（`_genes.csv`）、使った設定（`config_used.yaml`）、フォーカスリストの写し。**GitHub には上げない**（`.gitignore`） |
@@ -118,6 +119,7 @@ python target_net.py regulon-url --save ~/Documents/database/dorothea/dorothea_A
 
 ## 使い方の要点
 - 標的遺伝子名: `config.yaml` の一番上の `gene`。
+- TF が遺伝子を誘導する辺: `config.yaml` の `tf_regulation`（`true` で使う、`false` で SIGNOR の「転写の制御」の辺も、入力遺伝子が TF のときの DoRothEA / CollecTRI の標的も、すべて使わない）。
 - フォーカス遺伝子: `config.yaml` の `focus.path` のテキスト（1 行に 1 遺伝子、`#` はコメント）。図で丸が青、名前が太字になる。使わないときは `null`。
 - 組織の版: `config.yaml` の `tissue`（`name`・`min_ntpm`・`ref_ntpm`・`unknown`）。出力は `results/<日付>/<時刻>_<遺伝子名>_<組織名>/`。
 - 出力: `results/<日付>/<時刻>_<遺伝子名>/`。`results/` は `.gitignore` で GitHub に上げない設定。
