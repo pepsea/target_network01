@@ -355,8 +355,33 @@ def load_custom_edges(demo=False):
     return out
 
 
+def edge_score_cfg():
+    c = CFG.get("edge_score") or {}
+    return str(c.get("mode", "percentile")).lower(), str(c.get("combine", "noisy_or")).lower()
+
+
+def normalise_scores(s):
+    """Native edge scores of ONE database -> 0-1 by percentile rank within that database (ties share the mean rank).
+    Missing values get the median (0.5). Returns None when the database has no usable score (all missing or a single
+    value): the caller then falls back to the fixed base weight in EDGE_WEIGHT."""
+    s = pd.to_numeric(s, errors="coerce")
+    ok = s.notna()
+    if ok.sum() == 0 or s[ok].nunique() <= 1: return None
+    out = pd.Series(0.5, index=s.index); out[ok] = s[ok].rank(pct=True)
+    return out
+
+
 def merge_directed(*dfs):
-    """Merge directed edge tables; same pair from two DBs -> source 'A+B', weight from EDGE_WEIGHT."""
+    """Merge directed edge tables; same pair from several databases -> source 'A+B'.
+    weight = normalised edge score (edge_score.mode: percentile within each database | legacy = fixed base weight x SIGNOR score),
+    several databases are combined by edge_score.combine (noisy_or | max | mean)."""
+    mode, combine = edge_score_cfg()
+    dfs = [d.copy() for d in dfs]
+    for d in dfs:
+        n = normalise_scores(d["score"]) if (mode != "legacy" and "score" in d and len(d)) else None
+        d["nscore"] = n if n is not None else d["source"].map(lambda x: EDGE_WEIGHT.get(x, 0.7)) if len(d) else []
+        if n is None and len(d) and (d["source"] == "Reactome").all(): d["nscore"] = float(_cfgmod.db(CFG, "reactome_fi", "weight") or 0.5)
+        if len(d): print(f"[edge score] {d['source'].iloc[0]:<9} {len(d):>6} edges: " + ("percentile-normalised" if n is not None else "no native score -> fixed base weight"))
     allr = pd.concat(dfs, ignore_index=True)
     def agg(g):
         srcs = "+".join(sorted(set(g.source)))
@@ -370,15 +395,24 @@ def merge_directed(*dfs):
             w = w * (0.6 + 0.4 * float(g.score.max()))
         return pd.Series(dict(effect=effect, mechanism=";".join(sorted(set(g.mechanism))), residue=res, source=srcs, weight=round(w, 3)))
     out = allr.groupby(["src", "dst"], sort=False).apply(agg, include_groups=False).reset_index()
+    if mode != "legacy":
+        per = allr.groupby(["src", "dst", "source"], sort=False).nscore.max().reset_index()      # one score per database
+        g = per.groupby(["src", "dst"], sort=False).nscore
+        if combine == "max": w = g.max()
+        elif combine == "mean": w = g.mean()
+        else: w = 1 - np.exp(per.assign(l=np.log1p(-per.nscore.clip(upper=0.999))).groupby(["src", "dst"], sort=False).l.sum())
+        out["weight"] = w.reindex(pd.MultiIndex.from_frame(out[["src", "dst"]])).round(3).values
     return out
 
 
 def load_string(genes, min_score=700, demo=False, batch=500):
     """Physical edges among `genes` (experimental + database channels), via the STRING API (POST, batched).
     Optional layer: any failure returns an empty table with a warning instead of stopping the run."""
+    empty = pd.DataFrame(columns=["a", "b", "source"])
+    if _cfgmod.db(CFG, "string", "enabled") is False:
+        print("[STRING] disabled in config (string.enabled: false): physical layer skipped"); return empty
     if demo:
         return _demo_string()
-    empty = pd.DataFrame(columns=["a", "b", "source"])
     min_score = _cfgmod.db(CFG, "string", "min_score") or min_score
     if not CFG.get("allow_download", True):
         print("[STRING] offline mode: physical layer skipped"); return empty
@@ -543,6 +577,9 @@ def load_regulon(source=None, conf=None, path=None, demo=False):
     df["tf"] = df.tf.astype(str).str.upper(); df["target"] = df.target.astype(str).str.upper()
     df = df[df.confidence.isin(list(conf))].drop_duplicates(["tf", "target"])
     df["weight"] = df.confidence.map({"A": 1.0, "B": 0.8, "C": 0.6, "D": 0.4, "E": 0.2}).fillna(0.5)
+    if edge_score_cfg()[0] != "legacy":      # same rule as the signalling edges: percentile rank of the confidence level within the regulon
+        nw = normalise_scores(df["weight"])
+        if nw is not None: df["weight"] = nw.round(3)
     print(f"[{source}] {len(df)} TF-target edges (conf {conf}), {df.tf.nunique()} TFs")
     return df
 

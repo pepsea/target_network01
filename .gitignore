@@ -7,3 +7,12 @@ __pycache__/
 target_net.yaml
 .venv/
 data/
+
+# 解析の出力（図・表）は GitHub に上げない
+notebooks2/results/
+notebooks/*.png
+notebooks/*.html
+notebooks/*.csv
+.DS_Store
+**/.DS_Store
+notebooks/research_*.ipynb

@@ -103,7 +103,7 @@ your assertion — keep the file under version control next to the project.
   tf/DatabaseExtract_v_1.01.csv
   dorothea/dorothea_ABC_commercial.tsv
   depmap/CRISPRGeneEffect.csv  OmicsSomaticMutations.csv  [OmicsExpressionTPMLogp1HumanProteinCodingGenes.csv]
-  hpa/rna_tissue_consensus_tissues.tsv
+  hpa/rna_tissue_consensus.tsv
   target_net_cache/            (anything the tool downloads itself)
 ```
 `config.example.yaml` in the project root is the complete template for this layout (every key with its default and a

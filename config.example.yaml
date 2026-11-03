@@ -12,7 +12,7 @@
 #   depmap/CRISPRGeneEffect.csv                           DepMap CRISPR gene effect (Chronos)          required for genetics
 #   depmap/OmicsSomaticMutations.csv                      DepMap mutations (seed-lost lines)            needed for SL by mutation
 #   depmap/OmicsExpressionTPMLogp1HumanProteinCodingGenes.csv  DepMap expression (SL fallback; older name OmicsExpressionProteinCodingGenesTPMLogp1.csv also accepted)
-#   hpa/rna_tissue_consensus_tissues.tsv                  HPA tissue consensus (only for --tissue)
+#   hpa/rna_tissue_consensus.tsv                  HPA tissue consensus (only for --tissue)
 #   target_net_cache/                                     anything the tool downloads itself
 
 cache_dir: ~/Documents/database/target_net_cache
@@ -34,6 +34,7 @@ databases:
     min_score: 1.0              # FI score threshold when mode=directed (1.0 = pathway-annotated; predicted FIs are always dropped)
     weight: 0.5                 # walk weight of Reactome-only directed edges when mode=directed (SIGNOR = 0.9)
   string:
+    enabled: true               # false = ignore STRING completely (no physical-contact layer from STRING)
     min_score: 700              # STRING physical network via API (experimental + database channels); annotation column physical_with_seed
 
   # ---- endpoints and annotations ----------------------------------------------------------------------------
@@ -67,11 +68,17 @@ databases:
     path: null                  # optional tsv: src, dst, effect(+1/-1/0 or activate/inhibit) [, mechanism, residue, score, source]
                                 # relations missing from SIGNOR (e.g. ACVRL1 -> SMAD1) or in-house data (AirID, phospho); merged as source 'custom', weight 0.8
   hpa_tissue:
-    path: ~/Documents/database/hpa/rna_tissue_consensus_tissues.tsv  # columns Gene name, Tissue, nTPM; used only with --tissue NAME
+    path: ~/Documents/database/hpa/rna_tissue_consensus.tsv  # columns Gene name, Tissue, nTPM; used only with --tissue NAME
 
   # ---- genetics -------------------------------------------------------------------------------------------
   depmap:
     dir: ~/Documents/database/depmap   # CRISPRGeneEffect.csv (+ OmicsSomaticMutations.csv, OmicsExpression*ProteinCoding*.csv); file names resolved automatically
+
+# ---- edge scores ------------------------------------------------------------------------------------------
+edge_score:
+  mode: percentile              # percentile (default): every database's native score (SIGNOR SCORE, OmniPath reference count, Reactome FI score, DoRothEA level)
+                                # is turned into a 0-1 percentile rank within that database and used as the edge weight | legacy = fixed base weights (old behaviour)
+  combine: noisy_or             # same edge in several databases: noisy_or = 1 - prod(1 - s) | max | mean
 
 # ---- walk parameters (upstream / downstream modes) --------------------------------------------------------
 walk:

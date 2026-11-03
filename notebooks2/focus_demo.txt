@@ -1,0 +1,11 @@
+# デモ用のフォーカス遺伝子リスト（AKT1 用。1 行に 1 遺伝子。# で始まる行は無視される）
+PIK3CA
+PDPK1
+MTOR
+RICTOR
+PTEN
+GSK3B
+EGFR
+FOXO3
+MYC
+TP53
