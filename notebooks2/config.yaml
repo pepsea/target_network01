@@ -1,6 +1,6 @@
 # notebooks2/flow_view.ipynb の設定ファイル（パラメータとデータベースの場所）。~ は自分のホームに展開される。相対パスはこのフォルダ基準
 
-# 標的遺伝子名は、ノートブックの最初のコードセル（GENE）に書く
+gene: GRM5 # 標的遺伝子名（HGNC 記号、大文字）。ここを書き換えて、ノートブックを上から実行する
 
 databases:
   signor: # SIGNOR 全データ（CC BY 4.0）
@@ -15,7 +15,7 @@ databases:
     genes: ~/Documents/database/Human-GEM/genes.tsv # Ensembl ID -> 遺伝子記号
   uniprot: # UniProt 全ヒト reviewed（CC BY 4.0）: 受容体・リガンド・局在・機能の注釈
     path: ~/Documents/database/uniprot/uniprot_human_reviewed.tsv
-    names: ~/Documents/database/uniprot/uniprot_human_names.tsv   # 遺伝子名（タンパク質名）: 表とホバーに出す。列は Entry・Gene Names (primary)・Protein names（README に取得方法）
+    names: ~/Documents/database/uniprot/uniprot_human_names.tsv # 遺伝子名（タンパク質名）: 表とホバーに出す。列は Entry・Gene Names (primary)・Protein names（README に取得方法）
   tf_list: # Lambert 2018 の転写因子一覧（ライセンス: 記載なし = 不明。TF の定義にだけ使う）
     path: ~/Documents/database/tf/DatabaseExtract_v_1.01.csv
   depmap: # DepMap（CC BY 4.0）: CRISPRGeneEffect.csv がある場所。点の大きさ（入力遺伝子との相関）だけに使う
@@ -34,8 +34,8 @@ metabolism: # 代謝の辺（Human-GEM）を足す。足さないときは enabl
 
 flow: # 流れの図のパラメータ（選び方は flow_view.ipynb の冒頭に説明がある）
   geo_min: 0.25 # 辺を通す基準: √(weight × E) がこの値以上
-  max_hops: 10 # 入力遺伝子から何ステップまでたどるか
-  n_mid: 100 # 上流・下流のそれぞれで、流れの大きい順に描く遺伝子の数
+  max_hops: 15 # 入力遺伝子から何ステップまでたどるか
+  n_mid: 200 # 上流・下流のそれぞれで、流れの大きい順に描く遺伝子の数
   n_end: 20 # 上流・下流のそれぞれで、さらに描く末端側の遺伝子の数（経路スコアの大きい順）
   max_out: 3 # 各遺伝子から描く辺の最大数（最良経路の辺は別に必ず描く）
   max_ligands_per_receptor: 3 # 上流の受容体ごとに、表示のために足すリガンドの最大数（選ぶ基準には使わない）

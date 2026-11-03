@@ -5,7 +5,7 @@
 
 | ファイル | 内容 |
 |---|---|
-| `flow_view.ipynb` | 本体。最初のコードセルの `GENE` に標的遺伝子名を入れて、上から順に実行する |
+| `flow_view.ipynb` | 本体。`config.yaml` の一番上の `gene` に標的遺伝子名を入れて、上から順に実行する |
 | `config.yaml` | パラメータとデータベースの場所（標的遺伝子名以外はすべてここ） |
 | `focus_demo.txt` | フォーカス遺伝子のデモのリスト（`config.yaml` の `focus.path`） |
 | `results/<日付>/<時刻>_<遺伝子名>/` | 実行ごとの出力: 図（`.png`・`.html`）、遺伝子の表（`_genes.csv`）、使った設定（`config_used.yaml`）、フォーカスリストの写し。**GitHub には上げない**（`.gitignore`） |
@@ -96,7 +96,7 @@ done
 ```
 
 ## 使い方の要点
-- 標的遺伝子名: `flow_view.ipynb` の最初のコードセルの `GENE`。
+- 標的遺伝子名: `config.yaml` の一番上の `gene`。
 - フォーカス遺伝子: `config.yaml` の `focus.path` のテキスト（1 行に 1 遺伝子、`#` はコメント）。図で丸が青、名前が太字になる。使わないときは `null`。
 - 出力: `results/<日付>/<時刻>_<遺伝子名>/`。`results/` は `.gitignore` で GitHub に上げない設定。
 - パラメータ（`geo_min`・`max_hops`・`n_mid`・`n_end` など）の意味は、ノートブックの冒頭の説明にある。
