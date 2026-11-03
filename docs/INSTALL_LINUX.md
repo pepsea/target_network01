@@ -39,7 +39,7 @@ Either way the layout is:
   tf/DatabaseExtract_v_1.01.csv
   dorothea/dorothea_ABC_commercial.tsv
   depmap/CRISPRGeneEffect.csv  OmicsSomaticMutations.csv
-  hpa/rna_tissue_consensus_tissues.tsv
+  hpa/rna_tissue_consensus.tsv
   target_net_cache/
 ```
 

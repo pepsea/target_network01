@@ -1,0 +1,52 @@
+# notebooks2/flow_view.ipynb の設定ファイル（パラメータとデータベースの場所）。~ は自分のホームに展開される。相対パスはこのフォルダ基準
+
+# 標的遺伝子名は、ノートブックの最初のコードセル（GENE）に書く
+
+databases:
+  signor: # SIGNOR 全データ（CC BY 4.0）
+    path: ~/Documents/database/signor/all_data_12_07_26.tsv
+    entity_types: [protein, smallmolecule] # 辺の端点にする種類。smallmolecule = 代謝物・脂質・イオンなど。chemical（化合物・薬剤）を足すと薬剤も入る。protein だけにするとタンパク質のみ
+    max_complex_members: 10 # 複合体は構成タンパク質に展開する（メンバーは SIGNOR の form complex の行から）。メンバーがこれより多い複合体は展開しない（リボソームなど）
+  omnipath: # OmniPath の符号つき相互作用（API から取得して保存したもの。ライセンスフィルタ前の生ファイル）
+    path: ~/Documents/database/target_net_cache/omnipath_signed_omnipath_pathwayextra_kinaseextra_ligrecextra.txt
+    resources: ~/Documents/database/target_net_cache/omnipath_resources.txt # OmniPath のリソース別ライセンス一覧（JSON）
+  human_gem: # Human-GEM（ヒトの代謝モデル）: 酵素の遺伝子と代謝物の辺。ライセンス: CC BY 4.0（公開ページの記載。ローカルのファイルには記載なし）
+    path: ~/Documents/database/Human-GEM/Human-GEM.yml
+    genes: ~/Documents/database/Human-GEM/genes.tsv # Ensembl ID -> 遺伝子記号
+  uniprot: # UniProt 全ヒト reviewed（CC BY 4.0）: 受容体・リガンド・局在・機能の注釈
+    path: ~/Documents/database/uniprot/uniprot_human_reviewed.tsv
+    names: ~/Documents/database/uniprot/uniprot_human_names.tsv   # 遺伝子名（タンパク質名）: 表とホバーに出す。列は Entry・Gene Names (primary)・Protein names（README に取得方法）
+  tf_list: # Lambert 2018 の転写因子一覧（ライセンス: 記載なし = 不明。TF の定義にだけ使う）
+    path: ~/Documents/database/tf/DatabaseExtract_v_1.01.csv
+  depmap: # DepMap（CC BY 4.0）: CRISPRGeneEffect.csv がある場所。点の大きさ（入力遺伝子との相関）だけに使う
+    dir: ~/Documents/database/depmap
+
+license_strict: # OmniPath の記録のライセンス判定。「要ライセンス」と「曖昧」のリソースを 1 つでも含む記録は捨てる
+  clear: [CC BY 4.0, CC BY 3.0, CC BY 2.5, CC0 1.0, MIT, BSD] # 商用可の標準的な許諾 -> 使う
+  share_alike: [CC BY-SA 3.0, CC BY-SA 4.0] # 商用可・同条件で共有 -> 使う（共有条件あり）
+
+metabolism: # 代謝の辺（Human-GEM）を足す。足さないときは enabled: false
+  enabled: true
+  max_reactions_per_metabolite: 250 # これより多くの反応に出る代謝物（水・H+・ATP・NADPH・CoA など）は、すべてをつなぐので除く
+  edge_E: 0.5 # 代謝の辺の証拠 E（固定値。論文数・SIGNOR スコアが無いため）
+  edge_weight: 0.5 # 代謝の辺の weight（固定値）
+  use_reversible: false # true: 可逆な反応の逆向きの辺も使う（上流・下流が同じ代謝物につながりやすい）
+
+flow: # 流れの図のパラメータ（選び方は flow_view.ipynb の冒頭に説明がある）
+  geo_min: 0.25 # 辺を通す基準: √(weight × E) がこの値以上
+  max_hops: 10 # 入力遺伝子から何ステップまでたどるか
+  n_mid: 100 # 上流・下流のそれぞれで、流れの大きい順に描く遺伝子の数
+  n_end: 20 # 上流・下流のそれぞれで、さらに描く末端側の遺伝子の数（経路スコアの大きい順）
+  max_out: 3 # 各遺伝子から描く辺の最大数（最良経路の辺は別に必ず描く）
+  max_ligands_per_receptor: 3 # 上流の受容体ごとに、表示のために足すリガンドの最大数（選ぶ基準には使わない）
+  n_receptors: 10 # 上流で、終点の受容体を経路スコアの大きい順に足す数（受容体は先がなく flow が小さいので、別に足す）
+
+figure:
+  wrap_at: 25 # 1 つの列の遺伝子がこの数を超えると、遺伝子数をこの数で割って切り上げた本数の列に分ける。各列の数は同じくらい（差は 1 以内）になる（41 個なら 14・14・13）
+  row_px: 36 # 1 行の高さ（ピクセル）
+
+focus: # フォーカス遺伝子のリスト（図で、名前を太字・丸をえんじ色・つながる辺を太くする。選ぶ基準には使わない）
+  path: focus_demo.txt # 1 行に 1 遺伝子のテキスト（# で始まる行は無視）。使わないときは null
+
+output:
+  dir: results # 図（PNG・HTML）と遺伝子の表（CSV）の保存先。この下に <日付>/<時刻>_<遺伝子>/ のフォルダを作る

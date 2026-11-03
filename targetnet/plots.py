@@ -326,10 +326,10 @@ def flow_figure(json_path, width=1000, height=650, max_nodes=None, focus=None, c
     is_lig = lambda n: n.get("endpoint_type") == "ligand"
     has_lig = any(is_lig(n) for n in nodes)
     through = bool(F.get("through_tf")) and F["mode"] == "downstream"
-    if through:      # TFs are not collected in a last column: the walk continued past them, so every node sits at its hop
-        max_mid = max([n["hops"] for n in nodes] or [0])
-        for n in nodes: n["col"] = n["hops"]
-        ncol = max_mid + 1
+    if through:      # the walk continued past the TFs, but the view keeps them where the pathway ends: TFs in the far-right column, everything else at its hop
+        max_mid = max([n["hops"] for n in nodes if not n.get("is_endpoint")] or [0])
+        for n in nodes: n["col"] = max_mid + 1 if n.get("is_endpoint") else n["hops"]
+        ncol = max_mid + 2
     else:
         max_mid = max([n["hops"] for n in nodes if not n.get("is_endpoint")] or [0])
         for n in nodes: n["col"] = max_mid + 2 if is_lig(n) else max_mid + 1 if n.get("is_endpoint") else n["hops"]
@@ -352,6 +352,7 @@ def flow_figure(json_path, width=1000, height=650, max_nodes=None, focus=None, c
         for j in range(k):
             part = arr[j * per:(j + 1) * per]
             x = col_x(c) + (0 if k == 1 else (j - (k - 1) / 2) * slot * 0.75 / (k - 1 if k > 1 else 1) * (1 if F["mode"] != "upstream" else -1))
+            if through and c == ncol - 1: x = 96 - (k - 1 - j) * slot * 0.4        # TF column: sub-columns packed against the right edge of the view
             step = 90 / max(len(part), 1)
             for i, n in enumerate(part): pos[n["id"]] = (x, 95 - step * (i + 0.5))
     tallest = max(min(ROWS, math.ceil(len([n for n in nodes if n["col"] == c]) / nsub[c])) for c in range(ncol))

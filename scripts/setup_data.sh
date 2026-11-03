@@ -26,7 +26,7 @@ if [ -s "$ROOT/dorothea/dorothea_ABC_commercial.tsv" ]; then echo "  [skip] doro
 else (cd "$HERE" && python target_net.py regulon-url --save "$ROOT/dorothea/dorothea_ABC_commercial.tsv"); fi
 
 echo "[7] HPA tissue consensus"
-get "$ROOT/hpa/rna_tissue_consensus.tsv.zip" "https://www.proteinatlas.org/download/rna_tissue_consensus.tsv.zip"
+get "$ROOT/hpa/rna_tissue_consensus.tsv.zip" "https://www.proteinatlas.org/download/tsv/rna_tissue_consensus.tsv.zip"
 
 echo "[6] DepMap (large; portal API with Figshare fallback)"
 if [ -s "$ROOT/depmap/CRISPRGeneEffect.csv" ]; then echo "  [skip] CRISPRGeneEffect.csv exists";

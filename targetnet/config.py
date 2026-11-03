@@ -5,8 +5,9 @@ Search order for the config file:
   1. explicit path (CLI --config / api config=)
   2. $TARGETNET_CONFIG
   3. ./target_net.yaml, or target_net.yaml in any parent folder (notebooks live in notebooks/)
-  4. ~/.target_net.yaml
-  5. built-in defaults (everything downloaded on demand into cache_dir)
+  4. target_net.yaml in the project root (next to the targetnet package), wherever the notebook runs
+  5. ~/.target_net.yaml
+  6. built-in defaults (everything downloaded on demand into cache_dir)
 
 See config.example.yaml for all keys. Every 'path' may use ~ and environment variables.
 """
@@ -32,18 +33,19 @@ DEFAULTS = {
         "regulon":     {"source": "dorothea", "conf": "ABC", "path": None, "license": "commercial"},
                                                              # local tsv (OmniPath export or tf,target,mor,confidence); else OmniPath query
                                                              # license: commercial | academic | ignore  (OmniPath per-record licence filter)
-        "string":      {"min_score": 700},                   # STRING API only
+        "string":      {"enabled": True, "min_score": 700},  # STRING API only; enabled: false = ignore STRING completely
         "compartments":{"path": None},                       # tsv: gene<TAB>compartment (else UniProt API)
         "depmap":      {"dir": None},                        # folder with CRISPRGeneEffect.csv etc.
         "custom_edges": {"path": None},
         "omnipath": {"mode": "full", "datasets": "omnipath,pathwayextra,kinaseextra,ligrecextra", "license": "commercial", "path": None, "signed_only": True, "min_references": 1},
-        "hpa_tissue":  {"path": None, "url": "https://www.proteinatlas.org/download/rna_tissue_consensus.tsv.zip"},
+        "hpa_tissue":  {"path": None, "url": "https://www.proteinatlas.org/download/tsv/rna_tissue_consensus.tsv.zip"},
     },
     "walk": {"max_depth": 5, "min_score": 0.35, "hub_penalty": 0.3, "seed_rescue": True, "seed_rescue_weight": 0.3,
              "through_tf": True, "score_mode": "relative"},
     "view": {"max_nodes": 150, "max_nodes_crosstalk": 120, "max_edges_crosstalk": 40, "rows_per_column": 28},   # figure budgets only; tables are never capped
     "crosstalk": {"max_depth": 3, "min_score": 0.4, "min_sign_confidence": 0.5},   # local walks: cross-talk is proximal interference (plot budget -> view.max_edges_crosstalk)
     "interference": {"min_rel_change": 0.1, "weak_ratio": 0.5},    # a CORE node counts as changed when |delta / baseline_flow| >= this (10 %); gates flow_change_index
+    "edge_score": {"mode": "percentile", "combine": "noisy_or"},   # edge weight = percentile-normalised score within each database; legacy = old fixed base weights
     "sl":   {"min_lost": 20, "padj": 0.05, "delta": 0.15},
 }
 
@@ -71,7 +73,8 @@ def _upward(name, start=None):
 
 
 def load_config(path=None):
-    cands = [path, os.environ.get("TARGETNET_CONFIG"), _upward("target_net.yaml"), os.path.expanduser("~/.target_net.yaml")]
+    root_yaml = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "target_net.yaml")   # next to the package: found even when the notebook kernel runs outside the project
+    cands = [path, os.environ.get("TARGETNET_CONFIG"), _upward("target_net.yaml"), root_yaml, os.path.expanduser("~/.target_net.yaml")]
     used = next((c for c in cands if c and os.path.exists(os.path.expanduser(c))), None)
     cfg = _merge(DEFAULTS, yaml.safe_load(open(os.path.expanduser(used))) or {}) if used else copy.deepcopy(DEFAULTS)
     for db in cfg["databases"].values():

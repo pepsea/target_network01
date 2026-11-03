@@ -33,7 +33,7 @@ Which file each mode needs (`python target_net.py check-config` shows what is pr
 | `regulon` | `dorothea/dorothea_ABC_commercial.tsv` | downstream (TF → genes) | `python target_net.py regulon-url --save <path>` (OmniPath, commercial-licensed records) |
 | `depmap` | `depmap/CRISPRGeneEffect.csv` (+ mutations, expression) | sl, co-essentiality | `python fetch_depmap.py --out ~/Documents/database/depmap` |
 | `omnipath` | `omnipath/omnipath_signed.tsv` (or auto-cache) | gap filler where SIGNOR has no edge (mode `gaps`) | `python target_net.py omnipath-url --save <path>`; licence-filtered to commercial-purpose resources |
-| `hpa_tissue` | `hpa/rna_tissue_consensus_tissues.tsv` | `--tissue` filter only | HPA download (CC BY-SA) |
+| `hpa_tissue` | `hpa/rna_tissue_consensus.tsv` | `--tissue` filter only | HPA download (CC BY-SA) |
 
 With `allow_download: true` a missing `tf_list`, `regulon`, `reactome_fi` or `hpa_tissue` is fetched into `cache_dir` on first use;
 placing the files under the paths above is what makes strict offline mode (`allow_download: false`) possible.
