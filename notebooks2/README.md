@@ -29,6 +29,7 @@
 | 7 | DepMap | 点の大きさ（入力遺伝子との相関） | `databases.depmap.dir` | CC BY 4.0 |
 | 8 | Human-GEM | 代謝の辺（酵素と代謝物） | `databases.human_gem.path` / `.genes` | CC BY 4.0（公開ページの記載。ローカルのファイルには記載なし） |
 | 9 | Human Protein Atlas（組織別の発現） | `flow_view_tissue.ipynb` だけ。組織で遺伝子を絞る・辺の重みに発現量をかける | `databases.hpa_tissue.path` | CC BY-SA 3.0（フィルタと重みにだけ使う。表に出る nTPM を再配布するなら同じ条件で共有） |
+| 10 | DoRothEA / CollecTRI（OmniPath） | 入力遺伝子が TF のとき、その標的遺伝子（下流の hop 1） | `databases.regulon.path` | 集合。一次資源ごとに判定（`regulon.license`） |
 
 ### 1. SIGNOR（必須）
 - ページ: https://signor.uniroma2.it/downloads.php → **Download all data** → `all_data_DD_MM_YY.tsv`
@@ -91,6 +92,14 @@ curl -L -o rna_tissue_consensus.tsv.zip "https://www.proteinatlas.org/download/t
 - ページ: https://www.proteinatlas.org/about/download → **RNA consensus tissue gene data**。列は `Gene`・`Gene name`・`Tissue`・`nTPM`（約 39 MB、50 組織）。
 - 組織名は `Tissue` 列の値（全 51 組織）。`config.yaml` の `tissue` の下に一覧を載せてある。`config.yaml` の `tissue.name` に書く。名前が違うと、似た組織名を示して止まる。
 
+### 10. DoRothEA / CollecTRI の TF → 標的遺伝子（入力遺伝子が TF のときだけ）
+```bash
+cd /path/to/target_network01
+python target_net.py regulon-url --save ~/Documents/database/dorothea/dorothea_ABC_commercial.tsv
+```
+- OmniPath から、DoRothEA の信頼度 A〜C の TF → 標的の記録をダウンロードして保存する（約 7 MB、約 32,000 行。列に `source_genesymbol`・`target_genesymbol`・`is_stimulation`・`is_inhibition`・`sources`・`dorothea_level` など）。
+- ライセンスは、構成する資源ごとに違うので、`sources` の**一次資源**で判定する。`config.yaml` の `regulon.license`: `free_source`（既定。自由に使える一次資源が 1 つでもある記録を使う）/ `strict`（すべてが自由なものだけ。現状は 0 件）。
+
 ## フォルダの配置
 
 ```
@@ -104,6 +113,7 @@ curl -L -o rna_tissue_consensus.tsv.zip "https://www.proteinatlas.org/download/t
   depmap/CRISPRGeneEffect.csv
   Human-GEM/Human-GEM.yml   Human-GEM/genes.tsv
   hpa/rna_tissue_consensus.tsv        （組織の版だけ）
+  dorothea/dorothea_ABC_commercial.tsv   （入力遺伝子が TF のときだけ）
 ```
 
 ## 使い方の要点
