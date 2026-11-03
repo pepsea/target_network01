@@ -1,6 +1,6 @@
 # notebooks2/flow_view.ipynb の設定ファイル（パラメータとデータベースの場所）。~ は自分のホームに展開される。相対パスはこのフォルダ基準
 
-gene: GRM5 # 標的遺伝子名（HGNC 記号、大文字）。ここを書き換えて、ノートブックを上から実行する
+gene: BRD4 # 標的遺伝子名（HGNC 記号、大文字）。ここを書き換えて、ノートブックを上から実行する
 
 databases:
   signor: # SIGNOR 全データ（CC BY 4.0）
@@ -13,6 +13,8 @@ databases:
   human_gem: # Human-GEM（ヒトの代謝モデル）: 酵素の遺伝子と代謝物の辺。ライセンス: CC BY 4.0（公開ページの記載。ローカルのファイルには記載なし）
     path: ~/Documents/database/Human-GEM/Human-GEM.yml
     genes: ~/Documents/database/Human-GEM/genes.tsv # Ensembl ID -> 遺伝子記号
+  hpa_tissue: # Human Protein Atlas の組織別の発現量（nTPM）。flow_view_tissue.ipynb だけが使う。ライセンス: CC BY-SA 3.0（フィルタと重みにだけ使う。再配布するなら同じ条件で共有）
+    path: ~/Documents/database/hpa/rna_tissue_consensus.tsv # 列: Gene, Gene name, Tissue, nTPM
   uniprot: # UniProt 全ヒト reviewed（CC BY 4.0）: 受容体・リガンド・局在・機能の注釈
     path: ~/Documents/database/uniprot/uniprot_human_reviewed.tsv
     names: ~/Documents/database/uniprot/uniprot_human_names.tsv # 遺伝子名（タンパク質名）: 表とホバーに出す。列は Entry・Gene Names (primary)・Protein names（README に取得方法）
@@ -31,6 +33,12 @@ metabolism: # 代謝の辺（Human-GEM）を足す。足さないときは enabl
   edge_E: 0.5 # 代謝の辺の証拠 E（固定値。論文数・SIGNOR スコアが無いため）
   edge_weight: 0.5 # 代謝の辺の weight（固定値）
   use_reversible: false # true: 可逆な反応の逆向きの辺も使う（上流・下流が同じ代謝物につながりやすい）
+
+tissue: # 組織の発現（flow_view_tissue.ipynb だけが使う）
+  name: liver # 組織名（HPA の Tissue 列。例: liver, lung, kidney, heart muscle, cerebral cortex, skeletal muscle）。ここを書き換える
+  min_ntpm: 1 # この発現量（nTPM）未満のタンパク質は、ネットワークから除く（代謝物・低分子は除かない。入力遺伝子は残す）
+  ref_ntpm: 10 # 辺の係数 f = min(1, log(1+nTPM) / log(1+ref_ntpm))。ref_ntpm 以上の発現で 1。辺の係数は両端の f の幾何平均
+  unknown: keep # HPA にないタンパク質: keep（残す。係数 1）/ drop（除く）
 
 flow: # 流れの図のパラメータ（選び方は flow_view.ipynb の冒頭に説明がある）
   geo_min: 0.25 # 辺を通す基準: √(weight × E) がこの値以上
