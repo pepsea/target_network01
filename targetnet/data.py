@@ -279,7 +279,7 @@ def load_omnipath_signed(demo=False, signor_df=None, seeds=()):
         elif not CFG.get("allow_download", True): print("[OmniPath] offline and no databases.omnipath.path -> layer skipped"); return empty
         else:
             url = (OMNIPATH_URL + f"?datasets={datasets}&organisms=9606&genesymbols=1&directed=1&types=post_translational"
-                   "&fields=sources,references,type,is_directed,is_stimulation,is_inhibition,consensus_stimulation,consensus_inhibition")
+                   "&fields=sources,references,type")
             txt = cached_text(f"omnipath_signed2_{datasets.replace(',', '_')}", url); src_note = "OmniPath API (cached)"
         ok = _omnipath_commercial_resources() if (_cfgmod.db(CFG, "omnipath", "license") or "commercial") == "commercial" else None
     except DownloadError as e:

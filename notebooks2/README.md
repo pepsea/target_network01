@@ -41,7 +41,7 @@
 ```bash
 mkdir -p ~/Documents/database/target_net_cache && cd ~/Documents/database/target_net_cache
 curl -o omnipath_signed_omnipath_pathwayextra_kinaseextra_ligrecextra.txt \
-  "https://omnipathdb.org/interactions?datasets=omnipath,pathwayextra,kinaseextra,ligrecextra&organisms=9606&genesymbols=1&directed=1&types=post_translational&fields=sources,references,type,is_directed,is_stimulation,is_inhibition,consensus_stimulation,consensus_inhibition"
+  "https://omnipathdb.org/interactions?datasets=omnipath,pathwayextra,kinaseextra,ligrecextra&organisms=9606&genesymbols=1&directed=1&types=post_translational&fields=sources,references,type"
 curl -o omnipath_resources.txt "https://omnipathdb.org/resources?format=json"
 ```
 - ノートブックの 3 で、記録が載せているリソースのライセンスを判定し、**要ライセンスまたは曖昧なリソースを 1 つでも含む記録は捨てる**（`config.yaml` の `license_strict`）。
