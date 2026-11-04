@@ -7,7 +7,9 @@
 |---|---|
 | `flow_view.ipynb` | 本体。`config.yaml` の一番上の `gene` に標的遺伝子名を入れて、上から順に実行する |
 | `flow_view_tissue.ipynb` | 組織の発現つきの版。`config.yaml` の `tissue.name`（例: liver）で、**発現する遺伝子だけに絞り、辺の重みに発現量（nTPM）をかける** |
-| `flow_view_depmap.ipynb` | DepMap 版。途中の遺伝子を `flow` ではなく、**入力遺伝子との DepMap 相関の絶対値 |r|** の大きい順に選ぶ（祖先も入れて入力遺伝子につなぐ）。入力遺伝子が DepMap にないと止まる |
+| `flow_view_depmap.ipynb` | DepMap 版。選び方は通常版と同じで、辺を通す基準を `geo` から **`geo_depmap = geo × \|r(始点)\| × \|r(終点)\|`**（`flow.geo_depmap_min` 以上）に変える。r = 入力遺伝子との DepMap 相関。入力遺伝子が DepMap にないと止まる |
+| `flow_view_multi.ipynb` | **複数の入力遺伝子版**。`config.yaml` の `genes`（リスト）をすべて同時に入力し、全員から上流・下流へたどる（根が複数の木）。各遺伝子に、着ける入力遺伝子の数 `n_seeds`（共通の上流・下流の目安）を付け、DepMap の相関は入力遺伝子ごとに計算して絶対値が最大のものを使う。入力遺伝子は図の中央の列に縦に並ぶ |
+| （出力）`flow_view_<遺伝子>_interactive.html` | 3 つのノートブックが、図（PNG・Plotly の HTML）に加えて出す。**Cytoscape.js で、点をドラッグで動かせる**（線が追従する。インターネットが要る） |
 | `config.yaml` | 標的遺伝子名・パラメータ・データベースの場所（`tissue:` は組織の版だけが使う） |
 | `focus_demo.txt` | フォーカス遺伝子のデモのリスト（`config.yaml` の `focus.path`） |
 | `results/<日付>/<時刻>_<遺伝子名>/` | 実行ごとの出力: 図（`.png`・`.html`）、遺伝子の表（`_genes.csv`）、使った設定（`config_used.yaml`）、フォーカスリストの写し。**GitHub には上げない**（`.gitignore`） |
@@ -31,6 +33,7 @@
 | 8 | Human-GEM | 代謝の辺（酵素と代謝物） | `databases.human_gem.path` / `.genes` | CC BY 4.0（公開ページの記載。ローカルのファイルには記載なし） |
 | 9 | Human Protein Atlas（組織別の発現） | `flow_view_tissue.ipynb` だけ。組織で遺伝子を絞る・辺の重みに発現量をかける | `databases.hpa_tissue.path` | CC BY-SA 3.0（フィルタと重みにだけ使う。表に出る nTPM を再配布するなら同じ条件で共有） |
 | 10 | DoRothEA / CollecTRI（OmniPath） | 入力遺伝子が TF のとき、その標的遺伝子（下流の hop 1） | `databases.regulon.path` | 集合。一次資源ごとに判定（`regulon.license`） |
+| 11 | Reactome FI（反応の向き・符号つきの辺） | 向きのある辺・activate / inhibit の注釈がある辺を足す（`reactome_fi.enabled: false` で使わない） | `databases.reactome_fi.path` | CC0 |
 
 ### 1. SIGNOR（必須）
 - ページ: https://signor.uniroma2.it/downloads.php → **Download all data** → `all_data_DD_MM_YY.tsv`
@@ -100,6 +103,10 @@ python target_net.py regulon-url --save ~/Documents/database/dorothea/dorothea_A
 ```
 - OmniPath から、DoRothEA の信頼度 A〜C の TF → 標的の記録をダウンロードして保存する（約 7 MB、約 32,000 行。列に `source_genesymbol`・`target_genesymbol`・`is_stimulation`・`is_inhibition`・`sources`・`dorothea_level` など）。
 - ライセンスは、構成する資源ごとに違うので、`sources` の**一次資源**で判定する。`config.yaml` の `regulon.license`: `free_source`（既定。自由に使える一次資源が 1 つでもある記録を使う）/ `strict`（すべてが自由なものだけ。現状は 0 件）。
+
+### 11. Reactome FI（`reactome_fi.enabled: false` で使わない）
+- ページ: https://reactome.org/download-data → **Functional Interactions** → `FIsInGene_<MMDDYY>_with_annotations.txt.zip`（約 20 MB、CC0）。解凍して、`databases.reactome_fi.path` に置く。
+- 足す辺: 矢印のある辺と、注釈に activate / inhibit がある辺。促進と抑制が混ざる辺は符号不明（点線）。`complex`・`predicted` だけの辺は足さない。
 
 ## フォルダの配置
 

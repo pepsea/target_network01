@@ -1,6 +1,8 @@
 # notebooks2/flow_view.ipynb の設定ファイル（パラメータとデータベースの場所）。~ は自分のホームに展開される。相対パスはこのフォルダ基準
 
-gene: IKZF1 # 標的遺伝子名（HGNC 記号、大文字）。ここを書き換えて、ノートブックを上から実行する
+gene: AKT1 # 標的遺伝子名（HGNC 記号、大文字）。ここを書き換えて、ノートブックを上から実行する
+
+genes: [AKT1, MTOR, PIK3CA] # flow_view_multi.ipynb だけ: 入力遺伝子（複数。HGNC 記号、大文字）。上の gene は使わない
 
 tissue: # 組織の発現（flow_view_tissue.ipynb だけが使う）
   name: breast # 組織名（HPA の Tissue 列）。ここを書き換える。使える組織名は、すぐ下の一覧（全 51 組織。大文字小文字は問わない）
@@ -37,6 +39,8 @@ databases:
     path: ~/Documents/database/hpa/rna_tissue_consensus.tsv # 列: Gene, Gene name, Tissue, nTPM
   regulon: # DoRothEA / CollecTRI（OmniPath）の TF → 標的遺伝子。入力遺伝子が TF のときだけ使う（記録ごとに一次資源のライセンスで判定する。README に取得方法）
     path: ~/Documents/database/dorothea/dorothea_ABC_commercial.tsv
+  reactome_fi: # Reactome Functional Interactions（CC0）: 反応の向き・符号つきの辺を足す（README に取得方法）
+    path: ~/Documents/database/reactome/FIsInGene_061424_with_annotations.txt
   uniprot: # UniProt 全ヒト reviewed（CC BY 4.0）: 受容体・リガンド・局在・機能の注釈
     path: ~/Documents/database/uniprot/uniprot_human_reviewed.tsv
     names: ~/Documents/database/uniprot/uniprot_human_names.tsv # 遺伝子名（タンパク質名）: 表とホバーに出す。列は Entry・Gene Names (primary)・Protein names（README に取得方法）
@@ -49,11 +53,16 @@ license_strict: # OmniPath の記録のライセンス判定。「要ライセ�
   clear: [CC BY 4.0, CC BY 3.0, CC BY 2.5, CC0 1.0, MIT, BSD] # 商用可の標準的な許諾 -> 使う
   share_alike: [CC BY-SA 3.0, CC BY-SA 4.0] # 商用可・同条件で共有 -> 使う（共有条件あり）
 
+reactome_fi: # Reactome FI の辺を、SIGNOR・OmniPath のあとにネットワークへ足す（すでにある辺は上書きしない）
+  enabled: true # false で使わない
+  E: 0.4 # 足す辺の証拠 E と weight（SIGNOR・OmniPath より低め。FI は文脈なしの推定を含むため）
+  # 足す辺: 向きの矢印がある辺 + 注釈に activate / inhibit がある辺（促進と抑制が混ざる辺は符号不明の点線）。complex・predicted だけの辺は足さない。tf_regulation: false のときは「expression regulated by」も除く
+
 regulon: # 入力遺伝子が TF のとき、その TF の標的遺伝子を下流の hop 1 に足す
   enabled: true
   license: free_source # free_source: 自由に使える一次資源（TRRUST・SIGNOR・ENCODE・IntAct など）が 1 つでもある記録を使う / strict: すべての一次資源が自由なものだけ（現状は 0 件）/ all: ファイルの記録をすべて使う（一次資源のライセンスは確かめない。IKZF1 のように、標的がすべて曖昧な資源だけのときに使う）
   include_repressed: true # false にすると、抑制される標的を除く（促進される標的だけ）
-  level_E: {A: 0.8, B: 0.6, C: 0.5, D: 0.4} # DoRothEA の信頼度ごとの辺の証拠 E（自由な一次資源が 1 つ増えるごとに +0.05）
+  level_E: { A: 0.8, B: 0.6, C: 0.5, D: 0.4 } # DoRothEA の信頼度ごとの辺の証拠 E（自由な一次資源が 1 つ増えるごとに +0.05）
 
 metabolism: # 代謝の辺（Human-GEM）を足す。足さないときは enabled: false
   enabled: true
@@ -64,9 +73,10 @@ metabolism: # 代謝の辺（Human-GEM）を足す。足さないときは enabl
   use_reversible: false # true: 可逆な反応の逆向きの辺も使う（上流・下流が同じ代謝物につながりやすい）
 
 flow: # 流れの図のパラメータ（選び方は flow_view.ipynb の冒頭に説明がある）
-  geo_min: 0.25 # 辺を通す基準: √(weight × E) がこの値以上
-  max_hops: 15 # 入力遺伝子から何ステップまでたどるか
-  n_mid: 200 # 上流・下流のそれぞれで、流れの大きい順に描く遺伝子の数
+  geo_min: 0.3 # 辺を通す基準: √(weight × E) がこの値以上
+  geo_depmap_min: 0.01 # flow_view_depmap.ipynb だけ: geo の代わりに、geo_depmap = geo × |r(始点)| × |r(終点)| がこの値以上の辺を通す（r = 入力遺伝子との DepMap 相関）
+  max_hops: 5 # 入力遺伝子から何ステップまでたどるか
+  n_mid: 10 # 上流・下流のそれぞれで、流れの大きい順に描く遺伝子の数
   n_end: 20 # 上流・下流のそれぞれで、さらに描く末端側の遺伝子の数（経路スコアの大きい順）
   max_out: 3 # 各遺伝子から描く辺の最大数（最良経路の辺は別に必ず描く）
   max_ligands_per_receptor: 3 # 上流の受容体ごとに、表示のために足すリガンドの最大数（選ぶ基準には使わない）
